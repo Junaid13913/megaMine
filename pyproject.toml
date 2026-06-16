@@ -39,3 +39,6 @@ where = ["src"]
 [project.urls]
 Homepage = "https://github.com/Junaid13913/megaMine"
 Repository = "https://github.com/Junaid13913/megaMine"
+
+[tool.setuptools.package-data]
+"megaMine" = ["data/*.json", "data/*.txt"]
