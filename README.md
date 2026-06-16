@@ -2,9 +2,9 @@
 
 **Hybrid literature mining for precision oncology.**
 
-megaMine extracts gene–drug–cancer therapeutic evidence from PubMed, normalizes cancer labels, refines resistance evidence, tracks temporal trends, detects contradictions, links to ClinicalTrials.gov, and exports a provenance-aware knowledge graph with an interactive HTML report.
+megaMine extracts gene-drug-cancer therapeutic evidence from PubMed, normalizes cancer labels, refines resistance evidence, tracks temporal trends, detects contradictions, links to ClinicalTrials.gov, and exports a provenance-aware knowledge graph with an interactive HTML report.
 
-> ⚠️ Literature-derived evidence only. Not a clinical treatment recommendation.
+> Literature-derived evidence only. Not a clinical treatment recommendation.
 
 ---
 
@@ -12,7 +12,7 @@ megaMine extracts gene–drug–cancer therapeutic evidence from PubMed, normali
 
 Given a PubMed query, megaMine produces:
 
-- Normalized gene–drug–cancer evidence rows
+- Normalized gene-drug-cancer evidence rows
 - 3-tier resistance refinement (observed → context → direct evidence)
 - Temporal trend classification per gene-drug-cancer triplet
 - Contradiction detection with conflict scores
