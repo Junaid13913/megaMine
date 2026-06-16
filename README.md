@@ -91,4 +91,6 @@ megaMine --list-cancers
 
 ## Author
 
-Muhammad Junaid · Precision Medicine Lab (APML), Ajou University · junaidm@ajou.ac.kr
+Muhammad Junaid;
+Ajou Precision Medicine Lab (APML), Ajou University, School of Medicine, South Korea;
+junaidm@ajou.ac.kr
