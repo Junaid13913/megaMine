@@ -1,0 +1,25 @@
+# Data files — too large for git
+data/raw/
+data/processed/
+*.xlsx
+*.csv
+*.graphml
+*.html
+hgnc_approved.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+*.egg-info/
+dist/
+build/
+.env
+.venv
+
+# Mac
+.DS_Store
+
+# Notebooks output
+.ipynb_checkpoints/

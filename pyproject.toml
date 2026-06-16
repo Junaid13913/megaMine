@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "megaMine"
+version = "0.1.0"
+description = "MegaMine: HGNC-validated, context-aware miner for therapy and driver/HRD evidence from cancer literature."
+authors = [
+  { name = "Muhammad Junaid", email = "junaidm@ajou.ac.kr" }
+]
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE" }
+
+dependencies = [
+  "requests",
+  "pandas",
+  "numpy",
+  "tqdm",
+  "lxml",
+  "beautifulsoup4",
+  "openpyxl",
+  "python-dateutil",
+]
+
+[project.scripts]
+# This is the CLI name users will type:
+megaMine = "megaMine.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
