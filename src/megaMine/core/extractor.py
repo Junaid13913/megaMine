@@ -481,6 +481,40 @@ def load_drug_whitelist(path: Optional[str]) -> Dict[str,str]:
 
     return out
 
+# Drug sibling priority — when two sibling drugs in same paper,
+# prefer the one explicitly named in the title
+# Format: {drug_mentioned_in_title: [sibling_drugs_to_deprioritize]}
+DRUG_SIBLINGS: Dict[str, List[str]] = {
+    "olaparib":       ["talazoparib","niraparib","rucaparib","veliparib"],
+    "talazoparib":    ["olaparib","niraparib","rucaparib"],
+    "sotorasib":      ["adagrasib","garsorasib"],
+    "adagrasib":      ["sotorasib","garsorasib"],
+    "encorafenib":    ["binimetinib","dabrafenib","vemurafenib"],
+    "binimetinib":    ["encorafenib","trametinib","cobimetinib"],
+    "selpercatinib":  ["pralsetinib","vandetanib"],
+    "pralsetinib":    ["selpercatinib","vandetanib"],
+    "ivosidenib":     ["enasidenib","olutasidenib"],
+    "enasidenib":     ["ivosidenib","olutasidenib"],
+    "ibrutinib":      ["acalabrutinib","zanubrutinib","pirtobrutinib"],
+    "acalabrutinib":  ["ibrutinib","zanubrutinib","pirtobrutinib"],
+    "zanubrutinib":   ["ibrutinib","acalabrutinib"],
+    "pemigatinib":    ["futibatinib","infigratinib","erdafitinib"],
+    "futibatinib":    ["pemigatinib","infigratinib"],
+    "imatinib":       ["avapritinib","ripretinib","sunitinib"],
+    "avapritinib":    ["imatinib","ripretinib"],
+    "venetoclax":     ["azacitidine","decitabine","navitoclax"],
+    "nivolumab":      ["pembrolizumab","atezolizumab","durvalumab"],
+    "pembrolizumab":  ["nivolumab","atezolizumab","durvalumab"],
+    "atezolizumab":   ["pembrolizumab","nivolumab","durvalumab"],
+    "fruquintinib":   ["regorafenib","trifluridine"],
+    "regorafenib":    ["fruquintinib","trifluridine"],
+    "osimertinib":    ["gefitinib","erlotinib","afatinib","dacomitinib"],
+    "gefitinib":      ["osimertinib","erlotinib","afatinib"],
+    "bevacizumab":    ["atezolizumab","ramucirumab","pertuzumab"],
+    "inavolisib":     ["alpelisib","capivasertib","ipatasertib"],
+    "alpelisib":      ["inavolisib","capivasertib"],
+}
+
 # Drug class → gene mapping for fallback when gene not detected
 DRUG_TO_GENE: Dict[str, str] = {
     # EGFR inhibitors
@@ -1501,7 +1535,25 @@ def build_rows_for_pmid(pmid: str, meta: Dict, fb: Dict,
             top_freq = most.most_common()
             maxn = top_freq[0][1]
             cands = sorted([d for d,c in top_freq if c == maxn], key=lambda x: x.lower())
-            primary = cands[0]
+
+            # ── Sibling drug tiebreaker ──────────────────────────
+            # If top candidates are siblings, prefer the one that
+            # appears in abstract more distinctly (not just as comparison)
+            # Check if any candidate is a sibling of another
+            non_sibling_cands = []
+            for cand in cands:
+                siblings = set(DRUG_SIBLINGS.get(cand.lower(), []))
+                # cand is not a sibling of any other top candidate
+                other_tops = [c for c in cands if c != cand]
+                is_sibling = any(cand.lower() in DRUG_SIBLINGS.get(o.lower(),[])
+                                 for o in other_tops)
+                if not is_sibling:
+                    non_sibling_cands.append(cand)
+
+            if non_sibling_cands:
+                primary = non_sibling_cands[0]
+            else:
+                primary = cands[0]
         else:
             primary = (m.get("drug_all","").split(";")[0] or "").strip()
         m["drug_primary"] = primary
