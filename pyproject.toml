@@ -29,6 +29,7 @@ dependencies = [
 
 [project.scripts]
 megaMine = "megaMine.core.extractor:main"
+megaMine-maf = "megaMine.core.maf_pipeline:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
