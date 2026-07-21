@@ -481,6 +481,75 @@ def load_drug_whitelist(path: Optional[str]) -> Dict[str,str]:
 
     return out
 
+# Drug class → gene mapping for fallback when gene not detected
+DRUG_TO_GENE: Dict[str, str] = {
+    # EGFR inhibitors
+    "erlotinib":"EGFR","gefitinib":"EGFR","afatinib":"EGFR","osimertinib":"EGFR",
+    "dacomitinib":"EGFR","lapatinib":"EGFR","neratinib":"EGFR","mobocertinib":"EGFR",
+    "lazertinib":"EGFR","amivantamab":"EGFR","cetuximab":"EGFR","panitumumab":"EGFR",
+    # ALK inhibitors
+    "crizotinib":"ALK","alectinib":"ALK","brigatinib":"ALK","lorlatinib":"ALK",
+    "ceritinib":"ALK","ensartinib":"ALK",
+    # KRAS inhibitors
+    "sotorasib":"KRAS","adagrasib":"KRAS","garsorasib":"KRAS",
+    # BRAF inhibitors
+    "vemurafenib":"BRAF","dabrafenib":"BRAF","encorafenib":"BRAF",
+    # MEK inhibitors
+    "trametinib":"BRAF","cobimetinib":"BRAF","binimetinib":"BRAF",
+    # MET inhibitors
+    "capmatinib":"MET","tepotinib":"MET","savolitinib":"MET",
+    # RET inhibitors
+    "selpercatinib":"RET","pralsetinib":"RET",
+    # NTRK inhibitors
+    "larotrectinib":"NTRK1","entrectinib":"NTRK1","repotrectinib":"NTRK1",
+    # HER2
+    "trastuzumab":"HER2","pertuzumab":"HER2","tucatinib":"HER2",
+    "ado-trastuzumab":"HER2","trastuzumab-deruxtecan":"HER2","margetuximab":"HER2",
+    "pyrotinib":"HER2",
+    # CDK4/6 inhibitors
+    "palbociclib":"CDK4","ribociclib":"CDK4","abemaciclib":"CDK4",
+    # PARP inhibitors
+    "olaparib":"BRCA1","niraparib":"BRCA1","rucaparib":"BRCA1",
+    "talazoparib":"BRCA1","veliparib":"BRCA1",
+    # PI3K/AKT inhibitors
+    "alpelisib":"PIK3CA","inavolisib":"PIK3CA","capivasertib":"AKT1",
+    "ipatasertib":"AKT1","copanlisib":"PIK3CA",
+    # BCL2 inhibitors
+    "venetoclax":"BCL2","navitoclax":"BCL2",
+    # BTK inhibitors
+    "ibrutinib":"BTK","acalabrutinib":"BTK","zanubrutinib":"BTK",
+    "pirtobrutinib":"BTK","tirabrutinib":"BTK",
+    # FLT3 inhibitors
+    "midostaurin":"FLT3","gilteritinib":"FLT3","quizartinib":"FLT3",
+    "crenolanib":"FLT3",
+    # IDH inhibitors
+    "enasidenib":"IDH2","ivosidenib":"IDH1","olutasidenib":"IDH1",
+    # FGFR inhibitors
+    "erdafitinib":"FGFR2","pemigatinib":"FGFR2","infigratinib":"FGFR2",
+    "futibatinib":"FGFR2","tasurgratinib":"FGFR2",
+    # VEGF/angiogenesis
+    "bevacizumab":"VEGFR","ramucirumab":"VEGFR","sunitinib":"VEGFR",
+    "sorafenib":"VEGFR","axitinib":"VEGFR","regorafenib":"VEGFR",
+    "lenvatinib":"VEGFR","fruquintinib":"VEGFR","pazopanib":"VEGFR",
+    # PD-1/PD-L1
+    "pembrolizumab":"PD-L1","nivolumab":"PD-L1","atezolizumab":"PD-L1",
+    "durvalumab":"PD-L1","avelumab":"PD-L1","cemiplimab":"PD-L1",
+    "sintilimab":"PD-L1","camrelizumab":"PD-L1","tislelizumab":"PD-L1",
+    # TROP2
+    "sacituzumab":"TROP2",
+    # KIT/PDGFRA
+    "imatinib":"KIT","ripretinib":"KIT","avapritinib":"PDGFRA",
+    # CSF1R
+    "pexidartinib":"CSF1R",
+    # EZH2
+    "tazemetostat":"EZH2",
+    # Hormone therapies
+    "tamoxifen":"ESR1","fulvestrant":"ESR1","elacestrant":"ESR1",
+    "letrozole":"ESR1","anastrozole":"ESR1","exemestane":"ESR1",
+    # Endocrine (AR)
+    "enzalutamide":"AR","abiraterone":"AR","darolutamide":"AR",
+}
+
 def filter_drugs(drugs: Iterable[str], whitelist: Dict[str,str]) -> List[str]:
     seen = set(); out = []
     for d in drugs:
@@ -1414,7 +1483,21 @@ def build_rows_for_pmid(pmid: str, meta: Dict, fb: Dict,
     final_rows: List[dict] = []
     for key, m in merged.items():
         most = m.pop("_drug_counts")
-        if most:
+
+        # ── Primary drug selection — title-first strategy ──────────
+        # Priority 1: drug mentioned in the paper title
+        # Priority 2: most frequent drug in abstract
+        # Priority 3: alphabetical tiebreak
+        title_lower = (m.get("title","") or "").lower()
+        da_list_all = [x.strip() for x in (m.get("drug_all","") or "").split(";") if x.strip()]
+
+        title_drugs = [d for d in da_list_all if d.lower() in title_lower]
+
+        if title_drugs:
+            # Among title drugs pick most frequent
+            title_counts = {d: most.get(d, 0) for d in title_drugs}
+            primary = max(title_counts, key=lambda d: (title_counts[d], -len(d)))
+        elif most:
             top_freq = most.most_common()
             maxn = top_freq[0][1]
             cands = sorted([d for d,c in top_freq if c == maxn], key=lambda x: x.lower())
@@ -1428,6 +1511,22 @@ def build_rows_for_pmid(pmid: str, meta: Dict, fb: Dict,
         m["combination_drugs"] = "; ".join(partners)
         therapy_by_drug_local = {d: therapy_class(d) for d in da_list}
         m["therapy_type"] = therapy_type_from(primary, m["is_combination"] == "yes", therapy_by_drug_local)
+
+        # ── Gene fallback from drug class ──────────────────────────
+        # If no gene detected but drug is known → infer gene from drug
+        if not m.get("biomarker") or str(m.get("biomarker","")).strip() in ("","nan"):
+            inferred = DRUG_TO_GENE.get(primary.lower(), "")
+            if not inferred:
+                # Try partial match
+                for drug_key, gene_val in DRUG_TO_GENE.items():
+                    if drug_key in primary.lower() or primary.lower() in drug_key:
+                        inferred = gene_val
+                        break
+            if inferred:
+                m["biomarker"] = inferred
+                m["gene_type"] = "DNA"
+                m["biomarker_type"] = "gene"
+
         m["biomarker_type"] = "gene" if m.get("biomarker_type","").lower() not in {"protein","pathway"} else m["biomarker_type"].lower()
         gt = (m.get("gene_type") or "").upper()
         m["gene_type"] = gt if gt in {"DNA","RNA","PROTEIN"} else ("DNA" if gt == "" else gt)
