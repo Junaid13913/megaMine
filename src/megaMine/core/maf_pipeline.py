@@ -661,16 +661,55 @@ def build_patient_drug_ranking(verified_df:pd.DataFrame,
             .reset_index(drop=True))
 
 def build_html_report(summary, combined, ranked, patient_drug_ranking,
-                       comutations, patient_id, cancer, oncokb_data, out_path):
+                       comutations, patient_id, cancer, oncokb_data,
+                       out_path, trials_df=None):
     """
-    Simplified HTML report per reviewer recommendation:
-    - Remove drug ranking table
-    - Add evidence applicability classification
-    - Show evidence sentences
-    - Move co-mutation to supplementary
-    - Fix OncoKB error display
+    Simplified HTML report per reviewer recommendation.
     """
     ev_col = "final_evidence_type" if "final_evidence_type" in combined.columns else "evidence_type"
+
+    # ── Clinical trials section ───────────────────────────────
+    if trials_df is not None and len(trials_df) > 0:
+        trials_rows = ""
+        for _, tr in trials_df.iterrows():
+            drug     = tr.get("drug","") or tr.get("drug_primary","")
+            gene     = tr.get("gene","") or tr.get("biomarker","")
+            cancer_t = tr.get("cancer_type","") or tr.get("canonical_cancer_type","")
+            phase    = tr.get("highest_phase","") or ""
+            n_t      = tr.get("n_trials","") or tr.get("total_trials","") or 0
+            n_f      = tr.get("n_failed",0) or 0
+            # FIX: hide rows with no trials found
+            if not phase or str(n_t) in ("0",""):
+                continue
+            pc = {"Phase3":"#27ae60","Phase4":"#27ae60",
+                  "Phase2":"#1F78B4","Phase1":"#f39c12"}.get(
+                  str(phase).replace(" ",""),"#95a5a6")
+            trials_rows += (
+                f"<tr><td><strong>{drug}</strong></td><td>{gene}</td>"
+                f"<td>{cancer_t}</td>"
+                f"<td><span style='color:{pc};font-weight:600'>{phase}</span></td>"
+                f"<td>{n_t}</td><td style='color:#e74c3c'>{n_f}</td></tr>"
+            )
+        trials_section = (
+            "<div style='overflow-x:auto'>"
+            "<table style='width:100%;border-collapse:collapse;font-size:.78rem;"
+            "background:#fff;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.05);overflow:hidden'>"
+            "<thead><tr style='background:#1e2d3d;color:#fff'>"
+            "<th style='padding:8px 10px;text-align:left'>Drug</th>"
+            "<th style='padding:8px 10px;text-align:left'>Gene</th>"
+            "<th style='padding:8px 10px;text-align:left'>Cancer</th>"
+            "<th style='padding:8px 10px;text-align:left'>Highest Phase</th>"
+            "<th style='padding:8px 10px;text-align:left'>Total Trials</th>"
+            "<th style='padding:8px 10px;text-align:left'>Failed/Terminated</th>"
+            "</tr></thead>"
+            f"<tbody>{trials_rows}</tbody></table></div>"
+        )
+    else:
+        trials_section = (
+            "<p style='color:#94a3b8;font-size:.82rem'>"
+            "No clinical trial data linked — "
+            "requires verified same-cancer evidence.</p>"
+        )
 
     # Metrics
     n_clonal    = int((summary["vaf_clonality"]=="Clonal").sum())
@@ -820,7 +859,14 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
               {"No therapeutic literature evidence was retrieved for this gene under the current query settings." if papers==0 else
                "Literature records were retrieved, but none passed relation and context verification." if verified==0 else
                "Literature evidence retrieved and graded by alteration specificity and cancer context."}
-              {f" ⚠️ Annotation conflict: MAF class={altcls}, OncoKB effect={ok_eff} — exact allele not confirmed; OncoKB functional interpretation not applied to this variant." if not is_error and not allele_match and ok_eff not in ("Unknown","") and altcls in ("truncating","missense") and ok_eff.lower() not in ("unknown","") else ""}
+              {(f" ✅ Concordance: MAF class={altcls} is consistent with OncoKB effect={ok_eff}."
+                if not is_error and allele_match and
+                   (("gain" in ok_eff.lower() and altcls=="missense") or
+                    ("loss" in ok_eff.lower() and altcls=="truncating"))
+                else
+                f" ⚠️ Interpretation note: MAF class={altcls}, OncoKB effect={ok_eff} — exact allele not confirmed; OncoKB functional annotation applies to broader variant class, not this specific allele."
+                if not is_error and not allele_match and ok_eff not in ("Unknown","") and altcls in ("truncating","missense")
+                else "")}
               {" FGFR2 truncating variants (loss-of-function in an oncogene) may not respond like activating mutations or fusions — applicability not established." if gene=="FGFR2" and altcls=="truncating" else ""}
               {" ARID1A loss-of-function has been investigated as an immunotherapy-associated biomarker, but no patient-specific evidence was verified in this analysis." if gene=="ARID1A" else ""}
               {" KEAP1 loss-of-function has conflicting immunotherapy evidence in NSCLC. No patient-specific evidence verified here." if gene=="KEAP1" else ""}
@@ -908,28 +954,60 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
 </style>
 </head><body>
 <div class="hdr">
-  <h1>🧬 megaMine v2.0 — Patient-Guided Evidence Report</h1>
-  <p>Patient: <strong>{patient_id}</strong> &nbsp;|&nbsp;
-     Cancer: <strong>{cancer}</strong> &nbsp;|&nbsp;
-     APML · Ajou University</p>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+    <div>
+      <div style="font-size:.75rem;opacity:.7;text-transform:uppercase;
+                  letter-spacing:.08em;margin-bottom:4px">
+        Precision Oncology Evidence Report · Confidential
+      </div>
+      <h1 style="font-size:1.5rem;font-weight:700;letter-spacing:-.01em">
+        Patient-Guided Literature Evidence Report
+      </h1>
+      <p style="opacity:.75;margin-top:5px;font-size:.85rem">
+        Patient: <strong>{patient_id}</strong> &nbsp;·&nbsp;
+        Cancer type: <strong>{cancer}</strong> &nbsp;·&nbsp;
+        Generated by megaMine v2.0
+      </p>
+    </div>
+    <div style="text-align:right;font-size:.72rem;opacity:.65;line-height:1.8">
+      <div>APML · Ajou University Medical Center</div>
+      <div>Analysis scope: literature evidence synthesis</div>
+      <div>This report does not constitute clinical advice</div>
+    </div>
+  </div>
 </div>
 <div class="disc">
-  ⚠️ <strong>DISCLAIMER:</strong>
-  Literature evidence retrieval only.
-  <strong>NOT a clinical treatment recommendation.</strong>
-  Evidence is retrieved at gene-level and graded by specificity.
-  Exact applicability to patient variants requires expert oncologist review.
-  Scores are for literature prioritization only.
+  ⚠️ <strong>Important:</strong>
+  This report presents literature-derived evidence retrieved and graded
+  by the megaMine v2.0 pipeline. It is intended to support expert review,
+  not to replace clinical judgement.
+  <strong>It is not a treatment recommendation.</strong>
+  Evidence specificity is graded from exact alteration to gene-level.
+  All findings should be interpreted by a qualified oncologist with
+  access to the complete clinical record.
+</div>
+<div style="background:#f0f4f8;border:1px solid #e2e8f0;border-radius:6px;
+            padding:10px 18px;margin:0 32px 12px;font-size:.75rem;color:#475569">
+  <strong>Methodology:</strong>
+  Somatic variants were extracted from the MAF file and filtered to
+  cancer-relevant genes. For each variant, PubMed was queried using a
+  three-tier search strategy: (1) exact protein alteration, (2) alteration
+  class, and (3) gene-level. Retrieved records were normalized, deduplicated,
+  and verified by the megaMine offline LLM verifier. Evidence is graded by
+  specificity weight (exact=1.00, class=0.75, gene=0.45) and cancer-context
+  match. OncoKB was queried for exact-allele annotation. Results are
+  categorized as direct, related, indirect, or cross-cancer evidence.
+  VAF is used as a clonality confidence modifier, not a primary actionability tier.
 </div>
 <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;
             padding:8px 18px;margin:0 32px 12px;font-size:.76rem;color:#475569">
   <strong>OncoKB API:</strong>
   {("Available" if any(r.get("oncokb_gene_exist",False) for _,r in summary.iterrows()) else "Unavailable — API could not be reached")} &nbsp;|&nbsp;
   Variants queried: {len(summary)} &nbsp;|&nbsp;
-  Exact allele matches: {sum(1 for _,r in summary.iterrows() if r.get("oncokb_allele_exist",False))} &nbsp;|&nbsp;
-  Variant/class (no allele): {sum(1 for _,r in summary.iterrows() if r.get("oncokb_variant_exist",False) and not r.get("oncokb_allele_exist",False))} &nbsp;|&nbsp;
-  Gene-only: {sum(1 for _,r in summary.iterrows() if r.get("oncokb_gene_exist",False) and not r.get("oncokb_variant_exist",False))} &nbsp;|&nbsp;
-  No match: {sum(1 for _,r in summary.iterrows() if not r.get("oncokb_gene_exist",False))}
+  Exact allele: {sum(1 for _,r in summary.iterrows() if r.get("oncokb_allele_exist",False))} &nbsp;|&nbsp;
+  Variant/class only: {sum(1 for _,r in summary.iterrows() if r.get("oncokb_variant_exist",False) and not r.get("oncokb_allele_exist",False))} &nbsp;|&nbsp;
+  Gene recognized: {sum(1 for _,r in summary.iterrows() if r.get("oncokb_gene_exist",False) and not r.get("oncokb_variant_exist",False) and not r.get("oncokb_allele_exist",False))} &nbsp;|&nbsp;
+  No match: {sum(1 for _,r in summary.iterrows() if not r.get("oncokb_gene_exist",False) and not r.get("oncokb_variant_exist",False) and not r.get("oncokb_allele_exist",False))}
   &nbsp;|&nbsp;
   <strong>Same-cancer verified evidence:</strong>
   {int(summary["same_cancer_verified_rows"].sum()) if "same_cancer_verified_rows" in summary.columns else 0} rows
@@ -993,8 +1071,19 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
 </div>
 
 <footer>
-  megaMine v2.0 — APML, Ajou University · Literature evidence retrieval only.<br>
-  Not a clinical recommendation. Scores for expert literature review only.
+  <div style="margin-bottom:4px">
+    <strong>megaMine v2.0</strong> · Precision Medicine Laboratory (APML) ·
+    Ajou University Medical Center · Republic of Korea
+  </div>
+  <div>
+    This report was generated by an automated literature evidence synthesis
+    pipeline and has not been reviewed by a clinician.
+    It should not be used for clinical decision-making without expert review.
+  </div>
+  <div style="margin-top:4px;color:#94a3b8">
+    OncoKB annotations © Memorial Sloan Kettering Cancer Center (oncokb.org) ·
+    Academic use · Literature sources via PubMed (NCBI)
+  </div>
 </footer>
 </body></html>"""
 
@@ -1322,11 +1411,10 @@ def run_maf_pipeline(maf_path, cancer, out_dir, email, api_key,
         from megaMine.modules.temporal import run_temporal_analysis
 
         if len(verified) > 0:
-            # Build minimal contradiction df for trials linkage
             try:
-                _, trend_df  = run_temporal_analysis(combined)
-                contra_df    = run_contradiction_detection(combined,
-                                   profile_df=trend_df)
+                _, trend_df = run_temporal_analysis(combined)
+                contra_df   = run_contradiction_detection(combined,
+                                  profile_df=trend_df)
             except Exception:
                 contra_df = pd.DataFrame()
 
@@ -1336,8 +1424,13 @@ def run_maf_pipeline(maf_path, cancer, out_dir, email, api_key,
                 dry_run=False,
             )
             n_trials = len(trials_df)
-            n_active = int((trials_df.get("highest_phase","") != "").sum()) if n_trials>0 else 0
-            print(f"  Linked {n_trials} drug-gene pairs | Active trials found: {n_active}")
+            if n_trials > 0 and "highest_phase" in trials_df.columns:
+                n_active = int(
+                    (trials_df["highest_phase"].fillna("") != "").sum())
+            else:
+                n_active = 0
+            print(f"  Linked {n_trials} drug-gene pairs | "
+                  f"Active trials: {n_active}")
         else:
             print("  No verified evidence for trial linkage")
     except Exception as e:
@@ -1373,7 +1466,8 @@ def run_maf_pipeline(maf_path, cancer, out_dir, email, api_key,
     out_html = out/f"{patient_id}_megaMine_report.html"
     build_html_report(df_summary, combined, ranked,
                       patient_drug_ranking, comutations,
-                      patient_id, cancer, oncokb_data, out_html)
+                      patient_id, cancer, oncokb_data, out_html,
+                      trials_df=trials_df if len(trials_df)>0 else None)
 
     import subprocess
     subprocess.Popen(["open", str(out_html)])
