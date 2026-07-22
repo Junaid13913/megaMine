@@ -844,6 +844,33 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
 
         variant_sections += f"""
         variant_span = (f' <span>{variant}</span>' if str(variant) not in ('nan','None','') else '')
+        # Pre-computed HTML blocks (avoid backslash in f-string)
+        if app_note and app_note != 'No specific applicability notes.':
+            app_row_html = (
+                '<div class="interpretation-row interpretation-warning">'
+                '<div class="interpretation-label">Applicability</div>'
+                f'<div>{app_note}</div>'
+                '</div>'
+            )
+        else:
+            app_row_html = ''
+        if ev_rows:
+            ev_table_html = (
+                '<div class="table-wrap" style="margin:0">'
+                '<table class="clinical-table">'
+                '<thead><tr>'
+                '<th>Drug</th><th>Direction</th><th>Cancer context</th>'
+                '<th>Evidence class</th><th>Specificity</th><th>Study design</th>'
+                '<th>PMID</th><th>Evidence sentence</th><th>Priority score*</th>'
+                '</tr></thead>'
+                f'<tbody>{ev_rows}</tbody>'
+                '</table>'
+                '<p class="table-footnote">*Priority score ranks retrieved literature evidence '
+                'and does not estimate treatment response probability.</p>'
+                '</div>'
+            )
+        else:
+            ev_table_html = '<div class="empty-state" style="margin:0">No verified evidence found for this variant.</div>'
 <article class="variant-section">
   <div class="variant-header">
     <div>
@@ -868,28 +895,9 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
       <div>{drugs_row}</div>
     </div>
     {conflict_row}
-    {(
-    "<div class=\'interpretation-row interpretation-warning\'>"
-    "<div class=\'interpretation-label\'>Applicability</div>"
-    f"<div>{app_note}</div>"
-    "</div>"
-  ) if app_note and app_note != "No specific applicability notes." else ""}
+    {app_row_html}
   </div>
-  {(
-    "<div class=\'table-wrap\' style=\'margin:0\'>"
-    "<table class=\'clinical-table\'>"
-    "<thead><tr>"
-    "<th>Drug</th><th>Direction</th><th>Cancer context</th>"
-    "<th>Evidence class</th><th>Specificity</th><th>Study design</th>"
-    "<th>PMID</th><th>Evidence sentence</th><th>Priority score*</th>"
-    "</tr></thead>"
-    f"<tbody>{ev_rows}</tbody>"
-    "</table>"
-    "<p class=\'table-footnote\'>*Priority score ranks retrieved literature evidence and does not estimate treatment response probability.</p>"
-    "</div>"
-  ) if ev_rows else
-    "<div class=\'empty-state\' style=\'margin:0\'>No verified evidence found for this variant.</div>"
-  }
+  {ev_table_html}
 </article>"""
 
     # Trials
