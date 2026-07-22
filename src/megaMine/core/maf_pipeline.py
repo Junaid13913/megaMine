@@ -843,10 +843,11 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
         ) if conflict_note else ""
 
         variant_sections += f"""
+        variant_span = (f' <span>{variant}</span>' if str(variant) not in ('nan','None','') else '')
 <article class="variant-section">
   <div class="variant-header">
     <div>
-      <h3>{gene}{(' <span>' + str(variant) + '</span>') if str(variant) not in ('nan','None','') else ''}</h3>
+      <h3>{gene}{variant_span}</h3>
       <div class="variant-meta-line">VAF {vaf:.3f} · {clon} · {grole} · {altcls}</div>
     </div>
     <div class="annotation-status {ann_cls}">{ann_txt}</div>
