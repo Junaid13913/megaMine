@@ -307,9 +307,10 @@ def query_oncokb_exact(gene:str, variant:str, cancer:str, token:str) -> dict:
             "drug_levels":       drug_levels,
         }
     except Exception as e:
-        base["label"]  = "API error"
-        base["error"]  = str(e)[:100]
-        base["match_label"] = "API error"
+        base["label"]       = "Unavailable"
+        base["color"]       = "#b0b0b0"
+        base["match_label"] = f"OncoKB unavailable: {str(e)[:50]}"
+        base["error"]       = str(e)[:100]
         return base
 
 def query_clinvar(gene:str, variant:str, email:str, api_key:str) -> dict:
@@ -508,6 +509,37 @@ def score_evidence(df:pd.DataFrame, drug_levels:dict) -> pd.DataFrame:
     ).round(4)
     return df
 
+def classify_evidence(tier:str, cancer_match:bool,
+                       is_resistance:bool) -> str:
+    """
+    Classify evidence applicability per reviewer recommendation.
+    Direct / Related / Indirect / Cross-cancer / Resistance / Insufficient
+    """
+    if is_resistance:
+        return "Resistance evidence"
+    if tier == "exact_alteration" and cancer_match:
+        return "Direct evidence"
+    if tier == "exact_alteration" and not cancer_match:
+        return "Cross-cancer evidence"
+    if tier == "alteration_class" and cancer_match:
+        return "Related evidence"
+    if tier == "alteration_class" and not cancer_match:
+        return "Cross-cancer evidence"
+    if tier == "gene_level" and cancer_match:
+        return "Indirect evidence"
+    if tier == "gene_level" and not cancer_match:
+        return "Cross-cancer evidence"
+    return "Insufficient evidence"
+
+EVIDENCE_CLASS_COLOR = {
+    "Direct evidence":       "#27ae60",
+    "Related evidence":      "#1F78B4",
+    "Indirect evidence":     "#f39c12",
+    "Cross-cancer evidence": "#95a5a6",
+    "Resistance evidence":   "#e74c3c",
+    "Insufficient evidence": "#bdc3c7",
+}
+
 def check_comutation_hypotheses(genes_present:set) -> List[dict]:
     hits = []
     for rule in COMUTATION_HYPOTHESES:
@@ -627,62 +659,24 @@ def build_patient_drug_ranking(verified_df:pd.DataFrame,
 
 def build_html_report(summary, combined, ranked, patient_drug_ranking,
                        comutations, patient_id, cancer, oncokb_data, out_path):
+    """
+    Simplified HTML report per reviewer recommendation:
+    - Remove drug ranking table
+    - Add evidence applicability classification
+    - Show evidence sentences
+    - Move co-mutation to supplementary
+    - Fix OncoKB error display
+    """
     ev_col = "final_evidence_type" if "final_evidence_type" in combined.columns else "evidence_type"
+
+    # Metrics
     n_clonal    = int((summary["vaf_clonality"]=="Clonal").sum())
     n_subclonal = int((summary["vaf_clonality"]=="Subclonal").sum())
     n_lowvaf    = int((summary["vaf_clonality"]=="LowVAF").sum())
     total_papers   = int(summary["total_papers"].sum())
     total_verified = int(summary["verified_rows"].sum())
 
-    # Co-mutation panel
-    comut_html = ""
-    for c in comutations:
-        conf = c.get("confidence","Low")
-        cc   = {"Low":"#e74c3c","Medium":"#f39c12","High":"#27ae60"}.get(
-            conf.split("—")[0].strip(),"#e74c3c")
-        comut_html += f"""
-        <div style="background:#fff;border-radius:10px;padding:14px;
-                    box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:10px">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <strong>{c['pattern']}</strong>
-            <span style="background:{cc};color:#fff;font-size:.7rem;
-                         padding:2px 8px;border-radius:20px">{c['effect']}</span>
-            <span style="background:#f1f5f9;color:#475569;font-size:.7rem;
-                         padding:2px 8px;border-radius:20px">Confidence: {conf}</span>
-          </div>
-          <div style="font-size:.82rem;margin-bottom:4px">
-            <strong>Suggested:</strong> {c['drug']}</div>
-          <div style="font-size:.78rem;color:#475569;background:#fff3cd;
-                      padding:8px;border-radius:6px;border-left:3px solid #f39c12;
-                      line-height:1.6;margin:6px 0">{c['note']}</div>
-          <div style="font-size:.72rem;color:#94a3b8">Refs: {c['refs']}</div>
-        </div>"""
-    if not comut_html:
-        comut_html = "<p style='color:#94a3b8'>No co-mutation patterns detected.</p>"
-
-    # Patient drug ranking
-    drug_rows = ""
-    for i,(_, r) in enumerate(patient_drug_ranking.head(12).iterrows()):
-        dc  = r.get("direction_color","#95a5a6")
-        ok  = r.get("oncokb_match","None")
-        okh = (f'<span style="background:#1F78B4;color:#fff;font-size:.7rem;'
-               f'padding:2px 7px;border-radius:20px">{ok}</span>'
-               if ok!="None" else "—")
-        drug_rows += f"""
-        <tr>
-          <td><strong>{i+1}</strong></td>
-          <td><strong>{r['drug']}</strong></td>
-          <td style="font-size:.73rem;color:#64748b">{r['supporting_genes']}</td>
-          <td style="color:#27ae60;font-weight:600">{r['efficacy_pmids']}</td>
-          <td style="color:#e74c3c;font-weight:600">{r['resistance_pmids']}</td>
-          <td style="color:#64748b">{r['background_pmids']}</td>
-          <td><span style="color:{dc};font-weight:600">{r['direction']}</span></td>
-          <td>{okh}</td>
-          <td><strong>{r['evidence_priority_score']:.4f}</strong></td>
-          <td style="font-size:.73rem">{r['note']}</td>
-        </tr>"""
-
-    # Gene cards
+    # ── Per-variant evidence cards ─────────────────────────────
     gene_cards = ""
     for _, r in summary.iterrows():
         gene    = r["gene"]
@@ -691,7 +685,7 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
         clon    = r.get("vaf_clonality","LowVAF")
         vcol    = r.get("vaf_color","#e74c3c")
         ok_lbl  = r.get("oncokb_label","No level")
-        ok_col  = r.get("oncokb_color","#999999")
+        ok_col  = r.get("oncokb_color","#b0b0b0")
         ok_onco = r.get("oncokb_oncogenicity","Unknown")
         ok_eff  = r.get("oncokb_mutation_effect","Unknown")
         ok_ml   = r.get("oncokb_match_label","")
@@ -701,42 +695,75 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
         altcls  = r.get("alteration_class","unknown")
         papers  = r.get("total_papers",0)
         verified= r.get("verified_rows",0)
-        top_score=r.get("top_score",0)
 
-        ml_color = ("#27ae60" if "Exact" in ok_ml
-                    else "#f39c12" if "Variant" in ok_ml
-                    else "#95a5a6")
+        # OncoKB status badge
+        is_error = "unavailable" in ok_ml.lower() or "error" in ok_ml.lower()
+        ok_status_html = (
+            f'<span style="background:#b0b0b0;color:#fff;font-size:.7rem;padding:2px 8px;border-radius:20px">'
+            f'⚠️ OncoKB Unavailable</span>'
+            if is_error else
+            f'<span style="background:{ok_col};color:#fff;font-size:.7rem;padding:2px 8px;border-radius:20px">'
+            f'{ok_lbl} · {ok_ml}</span>'
+        )
 
-        gene_ev = ranked[(ranked["query_gene"]==gene) &
-                         (ranked["patient_variant"].astype(str)==str(variant))]
-        drug_rows_html = ""
+        # Evidence rows with classification
+        gene_ev = ranked[
+            (ranked["query_gene"]==gene) &
+            (ranked["patient_variant"].astype(str)==str(variant))
+        ] if len(ranked)>0 else pd.DataFrame()
+
+        ev_rows_html = ""
         for _, dr in gene_ev.iterrows():
-            drug  = dr.get("drug_primary","?")
-            ev    = dr.get(ev_col,"?")
-            tier  = dr.get("evidence_tier","gene_level")
-            spec  = dr.get("specificity_weight",0.45)
-            score = dr.get("evidence_priority_score",0)
-            pmid  = dr.get("pmid","")
-            is_res= bool(dr.get("is_resistance",False))
-            evc   = {"efficacy":"#27ae60","resistance":"#e74c3c",
-                     "background":"#95a5a6","safety":"#e67e22"}.get(ev,"#95a5a6")
-            tc    = {"exact_alteration":"#27ae60","alteration_class":"#1F78B4",
-                     "gene_level":"#95a5a6"}.get(tier,"#95a5a6")
-            rf    = " ⚠️R" if is_res else ""
-            drug_rows_html += f"""
+            drug     = dr.get("drug_primary","?")
+            ev       = dr.get(ev_col,"?")
+            tier     = dr.get("evidence_tier","gene_level")
+            spec     = dr.get("specificity_weight",0.45)
+            score    = dr.get("evidence_priority_score",0)
+            pmid     = dr.get("pmid","")
+            is_res   = bool(dr.get("is_resistance",False))
+            cancer_m = bool(dr.get("patient_cancer_match",False))
+            ev_class = dr.get("evidence_class",
+                              classify_evidence(tier, cancer_m, is_res))
+            sent     = str(dr.get("summary_sentence",""))[:200]
+            ec_col   = EVIDENCE_CLASS_COLOR.get(ev_class,"#95a5a6")
+            ev_col2  = {"efficacy":"#27ae60","resistance":"#e74c3c",
+                        "background":"#95a5a6","safety":"#e67e22"}.get(ev,"#95a5a6")
+
+            # Applicability statement
+            if ev_class == "Direct evidence":
+                applicability = "Exact variant + same cancer: strongest evidence"
+            elif ev_class == "Related evidence":
+                applicability = "Same alteration class + same cancer: moderate evidence"
+            elif ev_class == "Indirect evidence":
+                applicability = "Gene-level only: applicability to this variant not established"
+            elif ev_class == "Cross-cancer evidence":
+                applicability = "Different tumour type: cancer-context transfer required"
+            elif ev_class == "Resistance evidence":
+                applicability = "Resistance signal: drug may be ineffective"
+            else:
+                applicability = "Insufficient evidence for this variant"
+
+            ev_rows_html += f"""
             <tr>
-              <td><strong>{drug}</strong>{rf}</td>
-              <td><span style="color:{evc};font-weight:600">{ev}</span></td>
-              <td><span style="color:{tc};font-size:.72rem">{tier.replace("_"," ")}</span></td>
-              <td style="font-size:.73rem">{spec:.2f}</td>
-              <td>{score:.4f}</td>
+              <td><strong>{drug}</strong></td>
+              <td><span style="color:{ev_col2};font-weight:600">{ev}</span></td>
+              <td><span style="background:{ec_col};color:#fff;font-size:.68rem;
+                               padding:2px 7px;border-radius:20px">{ev_class}</span></td>
+              <td style="font-size:.72rem">{tier.replace("_"," ")} ({spec:.2f})</td>
+              <td>{score:.3f}</td>
               <td><a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
                      target="_blank" style="color:#5b4fcf">{pmid}</a></td>
+              <td style="font-size:.7rem;color:#475569;max-width:280px">{sent}</td>
+              <td style="font-size:.7rem;color:#64748b;font-style:italic">{applicability}</td>
             </tr>"""
+
+        if not ev_rows_html:
+            ev_rows_html = '<tr><td colspan="8" style="color:#94a3b8;text-align:center;padding:12px">No verified evidence found for this variant</td></tr>'
 
         gene_cards += f"""
         <div style="background:#fff;border-radius:10px;
-                    box-shadow:0 2px 8px rgba(0,0,0,.06);overflow:hidden">
+                    box-shadow:0 2px 8px rgba(0,0,0,.06);
+                    overflow:hidden;margin-bottom:16px">
           <div style="padding:14px;background:#f8fafc;border-bottom:1px solid #e2e8f0">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
               <strong style="font-size:1.15rem;color:#1e2d3d">{gene}</strong>
@@ -744,65 +771,84 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
                            border-radius:20px;color:#475569">{variant}</code>
               <span style="font-size:.72rem;padding:3px 9px;border-radius:20px;
                            color:#fff;background:{vcol}">VAF {vaf:.3f} · {clon}</span>
-              <span style="font-size:.72rem;padding:3px 9px;border-radius:20px;
-                           color:#fff;background:{ok_col}">{ok_lbl}</span>
-              <span style="font-size:.7rem;padding:2px 8px;border-radius:20px;
-                           color:#fff;background:{ml_color}">{ok_ml or 'No match'}</span>
+              {ok_status_html}
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:5px">
               <span style="font-size:.72rem;background:#fff;padding:2px 7px;
-                           border-radius:4px;border:1px solid #e2e8f0;color:#475569">
-                🧬 {ok_onco}</span>
+                           border:1px solid #e2e8f0;border-radius:4px;color:#475569">
+                🧬 Oncogenicity: {ok_onco}</span>
               <span style="font-size:.72rem;background:#fff;padding:2px 7px;
-                           border-radius:4px;border:1px solid #e2e8f0;color:#475569">
-                ⚙️ {ok_eff}</span>
+                           border:1px solid #e2e8f0;border-radius:4px;color:#475569">
+                ⚙️ Mutation effect: {ok_eff}</span>
               <span style="font-size:.72rem;background:#fff;padding:2px 7px;
-                           border-radius:4px;border:1px solid #e2e8f0;color:#475569">
+                           border:1px solid #e2e8f0;border-radius:4px;color:#475569">
                 🔬 ClinVar: {clinvar}</span>
               <span style="font-size:.72rem;background:#fff;padding:2px 7px;
-                           border-radius:4px;border:1px solid #e2e8f0;color:#475569">
+                           border:1px solid #e2e8f0;border-radius:4px;color:#475569">
                 📌 {grole} · {altcls}</span>
-              {f'<span style="font-size:.72rem;background:#dbeafe;padding:2px 7px;border-radius:4px;color:#1e40af">💊 {ok_drugs}</span>' if ok_drugs else ''}
+              {f'<span style="font-size:.72rem;background:#dbeafe;padding:2px 7px;border-radius:4px;color:#1e40af">💊 OncoKB drugs: {ok_drugs}</span>' if ok_drugs and not is_error else ''}
+            </div>
+            <div style="margin-top:8px;font-size:.75rem;color:#94a3b8;
+                        background:#f1f5f9;padding:6px 10px;border-radius:6px">
+              <strong>Applicability note:</strong>
+              Gene-level literature evidence retrieved.
+              Exact applicability to <code>{variant}</code> depends on
+              variant oncogenicity, functional class, and cancer context.
+              {"FGFR2 truncating variants (loss-of-function) may not respond to FGFR inhibitors designed for activating mutations." if gene=="FGFR2" and altcls=="truncating" else ""}
+              {"ARID1A loss-of-function may sensitize to immune checkpoint therapy; confirm with TMB/MSI testing." if gene=="ARID1A" else ""}
+              {"KEAP1 loss-of-function has conflicting IO evidence in NSCLC." if gene=="KEAP1" else ""}
+              {"POLE mutation oncogenicity Unknown; confirm hypermutator status with TMB testing." if gene=="POLE" else ""}
             </div>
           </div>
           <div style="display:flex;border-bottom:1px solid #f1f5f9">
-            <div style="flex:1;text-align:center;padding:9px 5px;border-right:1px solid #f1f5f9">
+            <div style="flex:1;text-align:center;padding:9px;border-right:1px solid #f1f5f9">
               <div style="font-size:1.1rem;font-weight:700;color:#5b4fcf">{papers}</div>
               <div style="font-size:.6rem;color:#64748b;text-transform:uppercase">Papers</div>
             </div>
-            <div style="flex:1;text-align:center;padding:9px 5px;border-right:1px solid #f1f5f9">
+            <div style="flex:1;text-align:center;padding:9px">
               <div style="font-size:1.1rem;font-weight:700;color:#5b4fcf">{verified}</div>
               <div style="font-size:.6rem;color:#64748b;text-transform:uppercase">Verified</div>
             </div>
-            <div style="flex:1;text-align:center;padding:9px 5px">
-              <div style="font-size:1.1rem;font-weight:700;color:#5b4fcf">{top_score:.4f}</div>
-              <div style="font-size:.6rem;color:#64748b;text-transform:uppercase">Top Score</div>
-            </div>
           </div>
           <div style="padding:10px;overflow-x:auto">
-            <table style="width:100%;border-collapse:collapse;font-size:.77rem">
+            <table style="width:100%;border-collapse:collapse;font-size:.76rem">
               <thead><tr style="background:#f8fafc">
-                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;
-                           text-align:left;font-size:.67rem;color:#64748b">Drug</th>
-                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;
-                           text-align:left;font-size:.67rem;color:#64748b">Evidence</th>
-                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;
-                           text-align:left;font-size:.67rem;color:#64748b">Specificity</th>
-                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;
-                           text-align:left;font-size:.67rem;color:#64748b">Weight</th>
-                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;
-                           text-align:left;font-size:.67rem;color:#64748b">Score</th>
-                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;
-                           text-align:left;font-size:.67rem;color:#64748b">PMID</th>
+                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">Drug</th>
+                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">Direction</th>
+                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">Evidence Class</th>
+                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">Specificity</th>
+                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">Score</th>
+                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">PMID</th>
+                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">Evidence Sentence</th>
+                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">Applicability</th>
               </tr></thead>
-              <tbody>{drug_rows_html or '<tr><td colspan="6" style="color:#94a3b8;text-align:center;padding:12px">No verified evidence</td></tr>'}</tbody>
+              <tbody>{ev_rows_html}</tbody>
             </table>
           </div>
-          <div style="padding:5px 12px 10px;font-size:.7rem;color:#94a3b8">
-            Specificity: exact (1.00) &gt; alteration class (0.75) &gt; gene-level (0.45).
-            Most evidence is gene-level. Score does not predict treatment response.
-          </div>
         </div>"""
+
+    # ── Co-mutation hypotheses (supplementary) ─────────────────
+    comut_html = ""
+    for c in comutations:
+        conf  = c.get("confidence","Low")
+        cc    = {"Low":"#e74c3c","Medium":"#f39c12"}.get(conf.split("—")[0].strip(),"#e74c3c")
+        comut_html += f"""
+        <div style="background:#fff;border-radius:8px;padding:12px;
+                    margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.05)">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+            <strong style="font-size:.9rem">{c["pattern"]}</strong>
+            <span style="background:{cc};color:#fff;font-size:.68rem;
+                         padding:2px 7px;border-radius:20px">{c["effect"]}</span>
+            <span style="background:#f1f5f9;color:#475569;font-size:.68rem;
+                         padding:2px 7px;border-radius:20px">Confidence: {conf}</span>
+          </div>
+          <div style="font-size:.78rem;color:#475569;line-height:1.5;
+                      background:#fff3cd;padding:7px 10px;border-radius:5px;
+                      border-left:3px solid #f39c12">{c["note"]}</div>
+          <div style="font-size:.7rem;color:#94a3b8;margin-top:4px">Refs: {c["refs"]}</div>
+        </div>"""
+    if not comut_html:
+        comut_html = "<p style='color:#94a3b8;font-size:.82rem'>No patterns detected.</p>"
 
     html = f"""<!DOCTYPE html>
 <html lang="en"><head>
@@ -810,140 +856,99 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>megaMine v2.0 — {patient_id}</title>
 <style>
-  :root{{--navy:#1e2d3d;--blue:#5b4fcf;
-         --font:'Segoe UI',system-ui,sans-serif}}
+  :root{{--navy:#1e2d3d;--blue:#5b4fcf;--font:'Segoe UI',system-ui,sans-serif}}
   *{{box-sizing:border-box;margin:0;padding:0}}
-  body{{font-family:var(--font);background:#f0f4f8;color:#1e293b}}
+  body{{font-family:var(--font);background:#f0f4f8;color:#1e293b;font-size:14px}}
   a{{color:var(--blue)}}
-  .hdr{{background:linear-gradient(135deg,#1e2d3d,#5b4fcf);color:#fff;padding:26px 34px}}
-  .hdr h1{{font-size:1.45rem;font-weight:800}}
-  .hdr p{{opacity:.8;margin-top:5px;font-size:.86rem}}
+  .hdr{{background:linear-gradient(135deg,#1e2d3d,#5b4fcf);color:#fff;padding:24px 32px}}
+  .hdr h1{{font-size:1.4rem;font-weight:800}}
+  .hdr p{{opacity:.8;margin-top:4px;font-size:.84rem}}
   .disc{{background:#fff3cd;border-left:4px solid #f39c12;padding:10px 18px;
-         margin:13px 34px;border-radius:6px;font-size:.79rem;color:#856404}}
-  .metrics{{display:flex;flex-wrap:wrap;gap:9px;padding:0 34px 17px}}
-  .m{{background:#fff;border-radius:9px;padding:11px 15px;text-align:center;
-      box-shadow:0 2px 7px rgba(0,0,0,.06);border-top:3px solid var(--blue);min-width:95px}}
-  .mv{{font-size:1.3rem;font-weight:800;color:var(--navy)}}
+         margin:12px 32px;border-radius:6px;font-size:.78rem;color:#856404}}
+  .metrics{{display:flex;flex-wrap:wrap;gap:8px;padding:0 32px 16px}}
+  .m{{background:#fff;border-radius:8px;padding:10px 14px;text-align:center;
+      box-shadow:0 2px 6px rgba(0,0,0,.05);border-top:3px solid var(--blue);min-width:90px}}
+  .mv{{font-size:1.25rem;font-weight:800;color:var(--navy)}}
   .ml{{font-size:.58rem;color:#64748b;text-transform:uppercase;margin-top:2px}}
-  .sec{{padding:0 34px 24px}}
-  .st{{font-size:.92rem;font-weight:700;color:var(--navy);margin-bottom:11px;
+  .sec{{padding:0 32px 22px}}
+  .st{{font-size:.9rem;font-weight:700;color:var(--navy);margin-bottom:10px;
        padding-bottom:5px;border-bottom:2px solid #e2e8f0}}
-  .rt{{width:100%;border-collapse:collapse;font-size:.78rem;background:#fff;
-       border-radius:9px;box-shadow:0 2px 7px rgba(0,0,0,.06);overflow:hidden}}
-  .rt th{{background:var(--navy);color:#fff;padding:8px 10px;text-align:left;
-          font-size:.66rem;text-transform:uppercase}}
-  .rt td{{padding:7px 10px;border-bottom:1px solid #f1f5f9}}
-  .rt tr:last-child td{{border:none}}
-  .gene-grid{{display:grid;
-    grid-template-columns:repeat(auto-fill,minmax(390px,1fr));gap:13px}}
-  .ladder{{display:flex;flex-direction:column;gap:5px}}
-  .lv{{padding:7px 11px;border-radius:5px;font-size:.78rem}}
-  .ok{{background:#d4edda;color:#155724}}
-  .warn{{background:#fff3cd;color:#856404}}
-  .info{{background:#d1ecf1;color:#0c5460}}
-  footer{{text-align:center;padding:16px;color:#64748b;font-size:.68rem;
-          border-top:1px solid #e2e8f0;margin-top:16px}}
+  .legend{{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}}
+  .leg{{font-size:.72rem;padding:3px 9px;border-radius:20px;color:#fff;font-weight:600}}
+  footer{{text-align:center;padding:14px;color:#64748b;font-size:.67rem;
+          border-top:1px solid #e2e8f0;margin-top:14px}}
 </style>
 </head><body>
-
 <div class="hdr">
-  <h1>🧬 megaMine v2.0 — Precision Oncology Evidence Report</h1>
+  <h1>🧬 megaMine v2.0 — Patient-Guided Evidence Report</h1>
   <p>Patient: <strong>{patient_id}</strong> &nbsp;|&nbsp;
      Cancer: <strong>{cancer}</strong> &nbsp;|&nbsp;
      APML · Ajou University</p>
 </div>
-
 <div class="disc">
   ⚠️ <strong>DISCLAIMER:</strong>
-  Literature-derived evidence synthesis. <strong>NOT a clinical recommendation.</strong>
-  Evidence priority scores prioritize literature for expert review —
-  they do not estimate treatment-response probability.
-  Requires oncologist interpretation before any clinical decision.
+  Literature evidence retrieval only.
+  <strong>NOT a clinical treatment recommendation.</strong>
+  Evidence is retrieved at gene-level and graded by specificity.
+  Exact applicability to patient variants requires expert oncologist review.
+  Scores are for literature prioritization only.
 </div>
-
 <div class="metrics">
   <div class="m"><div class="mv">{len(summary)}</div><div class="ml">Variants</div></div>
   <div class="m" style="border-color:#27ae60">
-    <div class="mv" style="color:#27ae60">{n_clonal}</div>
-    <div class="ml">Clonal ≥20%</div></div>
+    <div class="mv" style="color:#27ae60">{n_clonal}</div><div class="ml">Clonal</div></div>
   <div class="m" style="border-color:#f39c12">
-    <div class="mv" style="color:#f39c12">{n_subclonal}</div>
-    <div class="ml">Subclonal 5-20%</div></div>
+    <div class="mv" style="color:#f39c12">{n_subclonal}</div><div class="ml">Subclonal</div></div>
   <div class="m" style="border-color:#e74c3c">
-    <div class="mv" style="color:#e74c3c">{n_lowvaf}</div>
-    <div class="ml">Low VAF &lt;5%</div></div>
+    <div class="mv" style="color:#e74c3c">{n_lowvaf}</div><div class="ml">Low VAF</div></div>
   <div class="m"><div class="mv">{total_papers}</div><div class="ml">Papers</div></div>
   <div class="m" style="border-color:#00a8a8">
-    <div class="mv" style="color:#00a8a8">{total_verified}</div>
-    <div class="ml">Verified</div></div>
-  <div class="m" style="border-color:#e74c3c">
-    <div class="mv" style="color:#e74c3c">{len(comutations)}</div>
-    <div class="ml">Co-mutation Signals</div></div>
-</div>
-
-<div class="sec">
-  <div class="st">🏆 Patient-Level Drug Ranking
-    <span style="font-size:.73rem;font-weight:400;color:#64748b;margin-left:8px">
-    From verified evidence only · ⚠️R = resistance present</span></div>
-  <div style="overflow-x:auto">
-  <table class="rt">
-    <thead><tr>
-      <th>#</th><th>Drug</th><th>Supporting Genes</th>
-      <th>✅ Efficacy PMIDs</th><th>⚠️ Resistance PMIDs</th>
-      <th>Background PMIDs</th><th>Direction</th>
-      <th>OncoKB Match</th><th>Priority Score</th><th>Note</th>
-    </tr></thead>
-    <tbody>{drug_rows or '<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:14px">No verified evidence available for ranking</td></tr>'}</tbody>
-  </table>
-  </div>
-</div>
-
-<div class="sec">
-  <div class="st">🔗 Co-mutation Hypothesis Signals
-    <span style="font-size:.73rem;font-weight:400;color:#64748b;margin-left:8px">
-    Hypothesis-generating only — not validated biomarkers</span></div>
-  {comut_html}
+    <div class="mv" style="color:#00a8a8">{total_verified}</div><div class="ml">Verified</div></div>
 </div>
 
 <div class="sec">
   <div class="st">🧬 Per-Variant Evidence with Specificity Grading</div>
-  <div style="background:#fff3cd;border:1px solid #f39c12;border-radius:6px;
-              padding:9px 13px;margin-bottom:13px;font-size:.78rem;color:#856404">
-    <strong>Specificity grading:</strong>
-    Exact alteration (1.00) · Alteration class (0.75) · Gene-level (0.45).
-    Most papers describe gene-level evidence. Score weights evidence accordingly.
-    A drug supported only by gene-level papers cannot outrank exact alteration evidence.
-    <strong>Score does not predict treatment response.</strong>
+  <div class="legend">
+    <span class="leg" style="background:#27ae60">Direct — exact variant, same cancer</span>
+    <span class="leg" style="background:#1F78B4">Related — alteration class, same cancer</span>
+    <span class="leg" style="background:#f39c12">Indirect — gene-level, same cancer</span>
+    <span class="leg" style="background:#95a5a6">Cross-cancer — different tumour type</span>
+    <span class="leg" style="background:#e74c3c">Resistance evidence</span>
   </div>
-  <div class="gene-grid">{gene_cards}</div>
+  {gene_cards}
 </div>
 
 <div class="sec">
-  <div class="st">✅ Evidence Verification Ladder</div>
-  <div class="ladder">
-    <div class="lv ok">✅ Entity verified — gene in HGNC, drug in curated whitelist (254 drugs)</div>
-    <div class="lv ok">✅ Sentence relation verified — gene–drug co-mention in same sentence</div>
-    <div class="lv ok">✅ Cancer context — normalized to canonical cancer type</div>
-    <div class="lv ok">✅ Deduplication — PMID+gene+drug+cancer+tier+variant</div>
-    <div class="lv warn">⚡ Three-tier specificity — exact (1.00) · class (0.75) · gene (0.45)</div>
-    <div class="lv warn">⚡ Direction verified — efficacy/resistance/background by offline LLM</div>
-    <div class="lv warn">⚡ OncoKB exact match — gene/variant/allele recognition logged separately</div>
-    <div class="lv info">ℹ️ Study design — RCT/trial/observational/preclinical/review</div>
-    <div class="lv info">ℹ️ VAF as confidence modifier — not primary actionability tier</div>
-    <div class="lv info">ℹ️ Co-mutation signals — hypothesis-generating, not validated biomarkers</div>
+  <div class="st">🔗 Exploratory Co-mutation Hypothesis Signals
+    <span style="font-size:.72rem;font-weight:400;color:#e74c3c;margin-left:8px">
+    ⚠️ Hypothesis-generating only — NOT validated biomarkers — require confirmation</span>
+  </div>
+  {comut_html}
+</div>
+
+<div class="sec">
+  <div class="st">✅ Verification Ladder</div>
+  <div style="display:flex;flex-direction:column;gap:4px">
+    <div style="padding:6px 10px;background:#d4edda;color:#155724;border-radius:5px;font-size:.77rem">✅ Entity verified — gene in HGNC, drug in curated whitelist</div>
+    <div style="padding:6px 10px;background:#d4edda;color:#155724;border-radius:5px;font-size:.77rem">✅ Sentence relation verified — gene–drug co-mention</div>
+    <div style="padding:6px 10px;background:#d4edda;color:#155724;border-radius:5px;font-size:.77rem">✅ Deduplication — PMID+gene+drug+cancer+tier+variant</div>
+    <div style="padding:6px 10px;background:#fff3cd;color:#856404;border-radius:5px;font-size:.77rem">⚡ Three-tier specificity — exact (1.00) · class (0.75) · gene (0.45)</div>
+    <div style="padding:6px 10px;background:#fff3cd;color:#856404;border-radius:5px;font-size:.77rem">⚡ Evidence direction — efficacy/resistance/background by offline LLM</div>
+    <div style="padding:6px 10px;background:#d1ecf1;color:#0c5460;border-radius:5px;font-size:.77rem">ℹ️ VAF as confidence modifier — not primary actionability tier</div>
+    <div style="padding:6px 10px;background:#d1ecf1;color:#0c5460;border-radius:5px;font-size:.77rem">ℹ️ OncoKB exact alteration annotation (when available)</div>
   </div>
 </div>
 
 <footer>
-  megaMine v2.0 — APML, Ajou University Medical Center<br>
-  Evidence synthesis for literature review. Not a clinical treatment recommendation.<br>
-  OncoKB © MSK Academic. Evidence priority scores for expert review only.
+  megaMine v2.0 — APML, Ajou University · Literature evidence retrieval only.<br>
+  Not a clinical recommendation. Scores for expert literature review only.
 </footer>
 </body></html>"""
 
     with open(out_path,"w",encoding="utf-8") as f:
         f.write(html)
-    print(f"✅ HTML: {out_path} ({Path(out_path).stat().st_size//1024} KB)")
+    sz = Path(out_path).stat().st_size//1024
+    print(f"✅ HTML: {out_path} ({sz} KB)")
 
 
 def run_maf_pipeline(maf_path, cancer, out_dir, email, api_key,
@@ -1067,6 +1072,14 @@ def run_maf_pipeline(maf_path, cancer, out_dir, email, api_key,
         scored.append(part)
     if scored:
         combined = pd.concat(scored, ignore_index=True)
+
+    # Apply evidence classification
+    ev_col_tmp = "final_evidence_type" if "final_evidence_type" in combined.columns else "evidence_type"
+    combined["evidence_class"] = combined.apply(lambda r: classify_evidence(
+        str(r.get("evidence_tier","gene_level")),
+        bool(r.get("patient_cancer_match", False)),
+        bool(r.get("is_resistance", False))
+    ), axis=1)
 
     verified = combined[combined["llm_verified"]=="yes"].copy()
     print(f"  Verified: {len(verified)}/{len(combined)}")
