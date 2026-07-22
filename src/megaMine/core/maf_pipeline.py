@@ -843,7 +843,6 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
         ) if conflict_note else ""
 
         variant_span = (f' <span>{variant}</span>' if str(variant) not in ('nan','None','') else '')
-        variant_sections += f"""
         # Pre-computed HTML blocks (avoid backslash in f-string)
         if app_note and app_note != 'No specific applicability notes.':
             app_row_html = (
@@ -871,6 +870,7 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
             )
         else:
             ev_table_html = '<div class="empty-state" style="margin:0">No verified evidence found for this variant.</div>'
+        variant_sections += f"""
 <article class="variant-section">
   <div class="variant-header">
     <div>
