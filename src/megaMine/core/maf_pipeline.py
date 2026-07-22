@@ -699,15 +699,37 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
         papers  = r.get("total_papers",0)
         verified= r.get("relation_verified_rows", r.get("verified_rows",0))
 
-        # OncoKB status badge
-        is_error = "unavailable" in ok_ml.lower() or "error" in ok_ml.lower()
-        ok_status_html = (
-            f'<span style="background:#b0b0b0;color:#fff;font-size:.7rem;padding:2px 8px;border-radius:20px">'
-            f'⚠️ OncoKB Unavailable</span>'
-            if is_error else
-            f'<span style="background:{ok_col};color:#fff;font-size:.7rem;padding:2px 8px;border-radius:20px">'
-            f'{ok_lbl} · {ok_ml}</span>'
-        )
+        # OncoKB display gating by allele_exist
+        is_error     = "unavailable" in ok_ml.lower() or "error" in ok_ml.lower()
+        allele_match = r.get("oncokb_allele_exist", False)
+        variant_match= r.get("oncokb_variant_exist", False)
+        gene_match   = r.get("oncokb_gene_exist", False)
+
+        if is_error:
+            ok_status_html = ('<span style="background:#b0b0b0;color:#fff;font-size:.7rem;'
+                              'padding:2px 8px;border-radius:20px">⚠️ OncoKB Unavailable</span>')
+            show_variant_drugs = False
+            drug_heading = ""
+        elif allele_match:
+            ok_status_html = (f'<span style="background:{ok_col};color:#fff;font-size:.7rem;'
+                              f'padding:2px 8px;border-radius:20px">{ok_lbl} · Exact allele recognized</span>')
+            show_variant_drugs = True
+            drug_heading = "OncoKB variant-matched therapies"
+        elif variant_match:
+            ok_status_html = (f'<span style="background:#f39c12;color:#fff;font-size:.7rem;'
+                              f'padding:2px 8px;border-radius:20px">{ok_lbl} · Variant/class recognized — allele not confirmed</span>')
+            show_variant_drugs = False
+            drug_heading = "Broader OncoKB therapies — not confirmed for this exact allele"
+        elif gene_match:
+            ok_status_html = ('<span style="background:#95a5a6;color:#fff;font-size:.7rem;'
+                              'padding:2px 8px;border-radius:20px">Gene recognized only — no variant-level annotation</span>')
+            show_variant_drugs = False
+            drug_heading = "Gene-level OncoKB context only — not patient-variant matched"
+        else:
+            ok_status_html = ('<span style="background:#bdc3c7;color:#fff;font-size:.7rem;'
+                              'padding:2px 8px;border-radius:20px">No OncoKB match</span>')
+            show_variant_drugs = False
+            drug_heading = ""
 
         # Evidence rows with classification
         gene_ev = ranked[
@@ -789,7 +811,8 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
               <span style="font-size:.72rem;background:#fff;padding:2px 7px;
                            border:1px solid #e2e8f0;border-radius:4px;color:#475569">
                 📌 {grole} · {altcls}</span>
-              {f'<span style="font-size:.72rem;background:#dbeafe;padding:2px 7px;border-radius:4px;color:#1e40af">💊 OncoKB drugs: {ok_drugs}</span>' if ok_drugs and not is_error else ''}
+              {f'<span style="font-size:.72rem;background:#dbeafe;padding:2px 7px;border-radius:4px;color:#1e40af">💊 {drug_heading}: {ok_drugs}</span>' if ok_drugs and not is_error and show_variant_drugs else
+               f'<span style="font-size:.72rem;background:#f1f5f9;padding:2px 7px;border-radius:4px;color:#64748b">ℹ️ {drug_heading}: {ok_drugs}</span>' if ok_drugs and not is_error and not show_variant_drugs else ''}
             </div>
             <div style="margin-top:8px;font-size:.75rem;color:#64748b;
                         background:#f1f5f9;padding:6px 10px;border-radius:6px">
@@ -797,6 +820,7 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
               {"No therapeutic literature evidence was retrieved for this gene under the current query settings." if papers==0 else
                "Literature records were retrieved, but none passed relation and context verification." if verified==0 else
                "Literature evidence retrieved and graded by alteration specificity and cancer context."}
+              {f" ⚠️ Annotation conflict: MAF class={altcls}, OncoKB effect={ok_eff} — exact allele not confirmed; OncoKB functional interpretation not applied to this variant." if not is_error and not allele_match and ok_eff not in ("Unknown","") and altcls in ("truncating","missense") and ok_eff.lower() not in ("unknown","") else ""}
               {" FGFR2 truncating variants (loss-of-function in an oncogene) may not respond like activating mutations or fusions — applicability not established." if gene=="FGFR2" and altcls=="truncating" else ""}
               {" ARID1A loss-of-function has been investigated as an immunotherapy-associated biomarker, but no patient-specific evidence was verified in this analysis." if gene=="ARID1A" else ""}
               {" KEAP1 loss-of-function has conflicting immunotherapy evidence in NSCLC. No patient-specific evidence verified here." if gene=="KEAP1" else ""}
@@ -807,11 +831,11 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
           <div style="display:flex;border-bottom:1px solid #f1f5f9">
             <div style="flex:1;text-align:center;padding:9px;border-right:1px solid #f1f5f9">
               <div style="font-size:1.1rem;font-weight:700;color:#5b4fcf">{papers}</div>
-              <div style="font-size:.6rem;color:#64748b;text-transform:uppercase">Papers</div>
+              <div style="font-size:.6rem;color:#64748b;text-transform:uppercase">Candidate Records</div>
             </div>
             <div style="flex:1;text-align:center;padding:9px">
               <div style="font-size:1.1rem;font-weight:700;color:#5b4fcf">{verified}</div>
-              <div style="font-size:.6rem;color:#64748b;text-transform:uppercase">Verified</div>
+              <div style="font-size:.6rem;color:#64748b;text-transform:uppercase">Relation Verified</div>
             </div>
           </div>
           <div style="padding:10px;overflow-x:auto">
@@ -899,11 +923,13 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
 </div>
 <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;
             padding:8px 18px;margin:0 32px 12px;font-size:.76rem;color:#475569">
-  <strong>OncoKB annotation:</strong>
-  {f"Available — queried {len(summary)} variants"
-   if any(r.get("oncokb_label","") not in ("Unavailable","No token","API error","")
-          for _,r in summary.iterrows())
-   else "Unavailable — OncoKB API could not be reached. Variant-level OncoKB interpretation not included in this report."}
+  <strong>OncoKB API:</strong>
+  {("Available" if any(r.get("oncokb_gene_exist",False) for _,r in summary.iterrows()) else "Unavailable — API could not be reached")} &nbsp;|&nbsp;
+  Variants queried: {len(summary)} &nbsp;|&nbsp;
+  Exact allele matches: {sum(1 for _,r in summary.iterrows() if r.get("oncokb_allele_exist",False))} &nbsp;|&nbsp;
+  Variant/class (no allele): {sum(1 for _,r in summary.iterrows() if r.get("oncokb_variant_exist",False) and not r.get("oncokb_allele_exist",False))} &nbsp;|&nbsp;
+  Gene-only: {sum(1 for _,r in summary.iterrows() if r.get("oncokb_gene_exist",False) and not r.get("oncokb_variant_exist",False))} &nbsp;|&nbsp;
+  No match: {sum(1 for _,r in summary.iterrows() if not r.get("oncokb_gene_exist",False))}
   &nbsp;|&nbsp;
   <strong>Same-cancer verified evidence:</strong>
   {int(summary["same_cancer_verified_rows"].sum()) if "same_cancer_verified_rows" in summary.columns else 0} rows
@@ -942,7 +968,7 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
 
 <div class="sec">
   <div class="st">🏥 ClinicalTrials.gov Linkage</div>
-  {{trials_section}}
+  {trials_section}
 </div>
 
 <div class="sec">
@@ -1249,6 +1275,9 @@ def run_maf_pipeline(maf_path, cancer, out_dir, email, api_key,
             "oncokb_oncogenicity":    ok.get("oncogenicity","Unknown"),
             "oncokb_mutation_effect": ok.get("mutation_effect","Unknown"),
             "oncokb_match_label":     ok.get("match_label",""),
+            "oncokb_allele_exist":    ok.get("allele_exist", False),
+            "oncokb_variant_exist":   ok.get("variant_exist", False),
+            "oncokb_gene_exist":      ok.get("gene_exist", False),
             "oncokb_sensitive_level": ok.get("sensitive_level",""),
             "oncokb_resistant_level": ok.get("resistant_level",""),
             "oncokb_drugs":              ok_drugs_str,
