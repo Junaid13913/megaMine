@@ -842,8 +842,8 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
             f"<div>{conflict_note}</div></div>"
         ) if conflict_note else ""
 
-        variant_sections += f"""
         variant_span = (f' <span>{variant}</span>' if str(variant) not in ('nan','None','') else '')
+        variant_sections += f"""
         # Pre-computed HTML blocks (avoid backslash in f-string)
         if app_note and app_note != 'No specific applicability notes.':
             app_row_html = (
