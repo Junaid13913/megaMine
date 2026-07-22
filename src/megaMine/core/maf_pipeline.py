@@ -253,7 +253,10 @@ def query_oncokb_exact(gene:str, variant:str, cancer:str, token:str) -> dict:
             "Accept":        "application/json",
         })
         with urllib.request.urlopen(req, ctx, timeout=15) as r:
-            data = json.loads(r.read())
+            raw = r.read()
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8")
+            data = json.loads(raw)
 
         ge = bool(data.get("geneExist",    False))
         ve = bool(data.get("variantExist", False))
@@ -788,16 +791,17 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
                 📌 {grole} · {altcls}</span>
               {f'<span style="font-size:.72rem;background:#dbeafe;padding:2px 7px;border-radius:4px;color:#1e40af">💊 OncoKB drugs: {ok_drugs}</span>' if ok_drugs and not is_error else ''}
             </div>
-            <div style="margin-top:8px;font-size:.75rem;color:#94a3b8;
+            <div style="margin-top:8px;font-size:.75rem;color:#64748b;
                         background:#f1f5f9;padding:6px 10px;border-radius:6px">
               <strong>Applicability note:</strong>
-              Gene-level literature evidence retrieved.
-              Exact applicability to <code>{variant}</code> depends on
-              variant oncogenicity, functional class, and cancer context.
-              {"FGFR2 truncating variants (loss-of-function) may not respond to FGFR inhibitors designed for activating mutations." if gene=="FGFR2" and altcls=="truncating" else ""}
-              {"ARID1A loss-of-function may sensitize to immune checkpoint therapy; confirm with TMB/MSI testing." if gene=="ARID1A" else ""}
-              {"KEAP1 loss-of-function has conflicting IO evidence in NSCLC." if gene=="KEAP1" else ""}
-              {"POLE mutation oncogenicity Unknown; confirm hypermutator status with TMB testing." if gene=="POLE" else ""}
+              {"No therapeutic literature evidence was retrieved for this gene under the current query settings." if papers==0 else
+               "Literature records were retrieved, but none passed relation and context verification." if verified==0 else
+               "Literature evidence retrieved and graded by alteration specificity and cancer context."}
+              {" FGFR2 truncating variants (loss-of-function in an oncogene) may not respond like activating mutations or fusions — applicability not established." if gene=="FGFR2" and altcls=="truncating" else ""}
+              {" ARID1A loss-of-function has been investigated as an immunotherapy-associated biomarker, but no patient-specific evidence was verified in this analysis." if gene=="ARID1A" else ""}
+              {" KEAP1 loss-of-function has conflicting immunotherapy evidence in NSCLC. No patient-specific evidence verified here." if gene=="KEAP1" else ""}
+              {" POLE mutation oncogenicity is Unknown in this report. Hypermutator relevance requires independent pathogenicity and TMB assessment." if gene=="POLE" else ""}
+              {" MET P325T is not a classical exon-14 skipping event; MET inhibitor applicability is uncertain." if gene=="MET" else ""}
             </div>
           </div>
           <div style="display:flex;border-bottom:1px solid #f1f5f9">
@@ -893,6 +897,20 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
   Exact applicability to patient variants requires expert oncologist review.
   Scores are for literature prioritization only.
 </div>
+<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;
+            padding:8px 18px;margin:0 32px 12px;font-size:.76rem;color:#475569">
+  <strong>OncoKB annotation:</strong>
+  {f"Available — queried {len(summary)} variants"
+   if any(r.get("oncokb_label","") not in ("Unavailable","No token","API error","")
+          for _,r in summary.iterrows())
+   else "Unavailable — OncoKB API could not be reached. Variant-level OncoKB interpretation not included in this report."}
+  &nbsp;|&nbsp;
+  <strong>Same-cancer verified evidence:</strong>
+  {int(summary["same_cancer_verified_rows"].sum()) if "same_cancer_verified_rows" in summary.columns else 0} rows
+  &nbsp;|&nbsp;
+  <strong>Cross-cancer evidence:</strong>
+  {int(summary["cross_cancer_verified_rows"].sum()) if "cross_cancer_verified_rows" in summary.columns else 0} rows
+</div>
 <div class="metrics">
   <div class="m"><div class="mv">{len(summary)}</div><div class="ml">Variants</div></div>
   <div class="m" style="border-color:#27ae60">
@@ -902,8 +920,12 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
   <div class="m" style="border-color:#e74c3c">
     <div class="mv" style="color:#e74c3c">{n_lowvaf}</div><div class="ml">Low VAF</div></div>
   <div class="m"><div class="mv">{total_papers}</div><div class="ml">Papers</div></div>
-  <div class="m" style="border-color:#00a8a8">
-    <div class="mv" style="color:#00a8a8">{total_verified}</div><div class="ml">Verified</div></div>
+  <div class="m" style="border-color:#1F78B4">
+    <div class="mv" style="color:#1F78B4">{total_verified}</div>
+    <div class="ml">Relation Verified</div></div>
+  <div class="m" style="border-color:#27ae60">
+    <div class="mv" style="color:#27ae60">{{summary["same_cancer_verified_rows"].sum() if "same_cancer_verified_rows" in summary.columns else 0}}</div>
+    <div class="ml">Same-Cancer</div></div>
 </div>
 
 <div class="sec">
@@ -1081,8 +1103,35 @@ def run_maf_pipeline(maf_path, cancer, out_dir, email, api_key,
         bool(r.get("is_resistance", False))
     ), axis=1)
 
+    # FIX: query-gene consistency gate
+    # Reject rows where query gene absent from biomarker AND evidence sentence
+    def query_gene_relation_valid(row) -> bool:
+        qg   = str(row.get("query_gene","")).upper().strip()
+        bm   = str(row.get("biomarker","")).upper().strip()
+        sent = " ".join(str(row.get(c,"")) for c in
+                        ["summary_sentence","conclusion","evidence_sentence"]
+                        ).upper()
+        if not qg: return False
+        return (bm == qg or
+                re.search(rf"\\b{re.escape(qg)}\\b", sent) is not None)
+
+    combined["query_gene_relation_valid"] = combined.apply(
+        query_gene_relation_valid, axis=1)
+
+    n_invalid = (~combined["query_gene_relation_valid"]).sum()
+    if n_invalid > 0:
+        print(f"  ⚠️  Rejecting {n_invalid} rows: query gene absent from relation")
+        for _, r in combined[~combined["query_gene_relation_valid"]].iterrows():
+            print(f"    Rejected: query={r['query_gene']} "
+                  f"biomarker={r.get('biomarker','')} "
+                  f"drug={r.get('drug_primary','')}")
+        combined.loc[~combined["query_gene_relation_valid"],
+                     "llm_verified"] = "no"
+        combined.loc[~combined["query_gene_relation_valid"],
+                     "llm_reason"]   = "Rejected: query gene absent from relation"
+
     verified = combined[combined["llm_verified"]=="yes"].copy()
-    print(f"  Verified: {len(verified)}/{len(combined)}")
+    print(f"  Relation-verified: {len(verified)}/{len(combined)}")
 
     # FIX: normalized cancer alias matching — no substring fallback
     CANCER_ALIASES = {
@@ -1162,6 +1211,25 @@ def run_maf_pipeline(maf_path, cancer, out_dir, email, api_key,
         ok      = oncokb_data.get(vk,{})
         cv      = clinvar_data.get(vk,{})
         ok_drugs_str = "; ".join([d["drug"] for d in ok.get("drugs",[])[:3]])
+
+        # FIX: top drug from same-cancer evidence only
+        same_cancer_ver = ver[ver.get("patient_cancer_match", pd.Series([False]*len(ver), index=ver.index))==True] if "patient_cancer_match" in ver.columns else pd.DataFrame()
+        cross_cancer_ver= ver[ver.get("patient_cancer_match", pd.Series([True]*len(ver), index=ver.index))==False] if "patient_cancer_match" in ver.columns else pd.DataFrame()
+
+        if len(same_cancer_ver)>0 and "evidence_priority_score" in same_cancer_ver.columns:
+            top_same = same_cancer_ver.sort_values("evidence_priority_score",ascending=False).iloc[0]
+            top_drug_sc    = top_same.get("drug_primary","N/A")
+            top_ev_sc      = top_same.get("final_evidence_type","N/A")
+            top_score_sc   = top_same.get("evidence_priority_score",0)
+            top_pmid_sc    = top_same.get("pmid","")
+        else:
+            top_drug_sc  = "N/A"
+            top_ev_sc    = "No same-cancer evidence"
+            top_score_sc = 0.0
+            top_pmid_sc  = ""
+
+        top_drug_cc = cross_cancer_ver.iloc[0].get("drug_primary","N/A") if len(cross_cancer_ver)>0 else "N/A"
+
         summary.append({
             "gene":                   gene,
             "variant":                variant,
@@ -1178,15 +1246,18 @@ def run_maf_pipeline(maf_path, cancer, out_dir, email, api_key,
             "oncokb_match_label":     ok.get("match_label",""),
             "oncokb_sensitive_level": ok.get("sensitive_level",""),
             "oncokb_resistant_level": ok.get("resistant_level",""),
-            "oncokb_drugs":           ok_drugs_str,
-            "oncokb_score":           ok.get("score",0),
-            "clinvar_pathogenicity":  cv.get("pathogenicity","Unknown"),
-            "total_papers":           rows["pmid"].nunique(),
-            "verified_rows":          int(len(ver)),
-            "top_drug":               top.iloc[0]["drug_primary"] if len(top)>0 else "N/A",
-            "top_evidence_type":      top.iloc[0].get("final_evidence_type","N/A") if len(top)>0 else "N/A",
-            "top_score":              top.iloc[0].get("evidence_priority_score",0) if len(top)>0 else 0,
-            "top_pmid":               top.iloc[0]["pmid"] if len(top)>0 else "",
+            "oncokb_drugs":              ok_drugs_str,
+            "oncokb_score":              ok.get("score",0),
+            "clinvar_pathogenicity":     cv.get("pathogenicity","Unknown"),
+            "total_papers":              rows["pmid"].nunique(),
+            "relation_verified_rows":    int(len(ver)),
+            "same_cancer_verified_rows": int(len(same_cancer_ver)),
+            "cross_cancer_verified_rows":int(len(cross_cancer_ver)),
+            "top_drug":                  top_drug_sc,
+            "top_evidence_type":         top_ev_sc,
+            "top_score":                 top_score_sc,
+            "top_pmid":                  top_pmid_sc,
+            "top_cross_cancer_drug":     top_drug_cc,
         })
 
     df_summary = pd.DataFrame(summary)
