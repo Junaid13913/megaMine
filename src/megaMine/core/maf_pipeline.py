@@ -663,132 +663,140 @@ def build_patient_drug_ranking(verified_df:pd.DataFrame,
 def build_html_report(summary, combined, ranked, patient_drug_ranking,
                        comutations, patient_id, cancer, oncokb_data,
                        out_path, trials_df=None):
-    """
-    Simplified HTML report per reviewer recommendation.
-    """
+    """Professional clinical genomics report."""
+    import re as _re
     ev_col = "final_evidence_type" if "final_evidence_type" in combined.columns else "evidence_type"
 
-    # ── Clinical trials section ───────────────────────────────
-    if trials_df is not None and len(trials_df) > 0:
-        trials_rows = ""
-        for _, tr in trials_df.iterrows():
-            drug     = tr.get("drug","") or tr.get("drug_primary","")
-            gene     = tr.get("gene","") or tr.get("biomarker","")
-            cancer_t = tr.get("cancer_type","") or tr.get("canonical_cancer_type","")
-            phase    = tr.get("highest_phase","") or ""
-            n_t      = tr.get("n_trials","") or tr.get("total_trials","") or 0
-            n_f      = tr.get("n_failed",0) or 0
-            # FIX: hide rows with no trials found
-            if not phase or str(n_t) in ("0",""):
-                continue
-            pc = {"Phase3":"#27ae60","Phase4":"#27ae60",
-                  "Phase2":"#1F78B4","Phase1":"#f39c12"}.get(
-                  str(phase).replace(" ",""),"#95a5a6")
-            trials_rows += (
-                f"<tr><td><strong>{drug}</strong></td><td>{gene}</td>"
-                f"<td>{cancer_t}</td>"
-                f"<td><span style='color:{pc};font-weight:600'>{phase}</span></td>"
-                f"<td>{n_t}</td><td style='color:#e74c3c'>{n_f}</td></tr>"
-            )
-        if not trials_rows:
-            trials_section = (
-                "<div style='background:#fff;padding:12px 16px;border-radius:8px;"
-                "color:#64748b;font-size:.78rem;box-shadow:0 2px 6px rgba(0,0,0,.05)'>"
-                "ClinicalTrials.gov was queried but no trials with confirmed phase "
-                "data were identified for the retrieved drug-gene pairs."
-                "</div>"
-            )
-        else:
-            trials_section = (
-            "<div style='overflow-x:auto'>"
-            "<table style='width:100%;border-collapse:collapse;font-size:.78rem;"
-            "background:#fff;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.05);overflow:hidden'>"
-            "<thead><tr style='background:#1e2d3d;color:#fff'>"
-            "<th style='padding:8px 10px;text-align:left'>Drug</th>"
-            "<th style='padding:8px 10px;text-align:left'>Gene</th>"
-            "<th style='padding:8px 10px;text-align:left'>Cancer</th>"
-            "<th style='padding:8px 10px;text-align:left'>Highest Phase</th>"
-            "<th style='padding:8px 10px;text-align:left'>Total Trials</th>"
-            "<th style='padding:8px 10px;text-align:left'>Failed/Terminated</th>"
-            "</tr></thead>"
-            f"<tbody>{trials_rows}</tbody></table></div>"
-        )
-    else:
-        trials_section = (
-            "<div style='background:#fff;padding:12px 16px;border-radius:8px;"
-            "color:#64748b;font-size:.78rem;box-shadow:0 2px 6px rgba(0,0,0,.05)'>"
-            "No complete ClinicalTrials.gov linkage was identified for the "
-            "relation-verified evidence in this report. Trial linkage requires "
-            "same-cancer verified gene–drug relations."
-            "</div>"
-        )
+    n_variants     = len(summary)
+    n_candidates   = int(summary["total_papers"].sum())
+    n_rel_verified = int(summary["relation_verified_rows"].sum()
+                         if "relation_verified_rows" in summary.columns else 0)
+    n_same_cancer  = int(summary["same_cancer_verified_rows"].sum()
+                         if "same_cancer_verified_rows" in summary.columns else 0)
+    n_cross_cancer = int(summary["cross_cancer_verified_rows"].sum()
+                         if "cross_cancer_verified_rows" in summary.columns else 0)
+    n_exact_allele = int(summary["oncokb_allele_exist"].sum()
+                         if "oncokb_allele_exist" in summary.columns else 0)
+    n_variant_class= int(
+        ((summary.get("oncokb_variant_exist", False)==True) &
+         (summary.get("oncokb_allele_exist",  False)!=True)).sum())
+    n_gene_only    = int(
+        ((summary.get("oncokb_gene_exist",    False)==True) &
+         (summary.get("oncokb_variant_exist", False)!=True) &
+         (summary.get("oncokb_allele_exist",  False)!=True)).sum())
 
-    # Metrics
-    n_clonal    = int((summary["vaf_clonality"]=="Clonal").sum())
-    n_subclonal = int((summary["vaf_clonality"]=="Subclonal").sum())
-    n_lowvaf    = int((summary["vaf_clonality"]=="LowVAF").sum())
-    total_papers   = int(summary["total_papers"].sum())
-    total_verified = int(summary["relation_verified_rows"].sum() if "relation_verified_rows" in summary.columns else 0)
-
-    # ── Per-variant evidence cards ─────────────────────────────
-    gene_cards = ""
+    # Variant overview rows
+    var_rows = ""
     for _, r in summary.iterrows():
-        gene    = r["gene"]
-        variant = r.get("variant","")
-        vaf     = r.get("VAF",0)
-        clon    = r.get("vaf_clonality","LowVAF")
-        vcol    = r.get("vaf_color","#e74c3c")
-        ok_lbl  = r.get("oncokb_label","No level")
-        ok_col  = r.get("oncokb_color","#b0b0b0")
-        ok_onco = r.get("oncokb_oncogenicity","Unknown")
-        ok_eff  = r.get("oncokb_mutation_effect","Unknown")
-        ok_ml   = r.get("oncokb_match_label","")
-        ok_drugs= r.get("oncokb_drugs","")
-        clinvar = r.get("clinvar_pathogenicity","Unknown")
-        grole   = r.get("gene_role","unknown")
-        altcls  = r.get("alteration_class","unknown")
-        papers  = r.get("total_papers",0)
-        verified= r.get("relation_verified_rows", r.get("verified_rows",0))
+        clon   = r.get("vaf_clonality","LowVAF")
+        clon_c = {"Clonal":"#2f6b4f","Subclonal":"#8a5a16","LowVAF":"#9b3a3a"}.get(clon,"#4b5563")
+        var_rows += (
+            f"<tr>"
+            f"<td><strong>{r['gene']}</strong></td>"
+            f"<td><code style='font-size:11px'>{r.get('variant','')}</code></td>"
+            f"<td>{r.get('VAF',0):.3f}</td>"
+            f"<td style='color:{clon_c};font-weight:600'>{clon}</td>"
+            f"<td>{r.get('alteration_class','')}</td>"
+            f"<td style='font-size:10.5px'>{r.get('oncokb_match_label','') or '—'}</td>"
+            f"<td style='text-align:center'>{r.get('total_papers',0)}</td>"
+            f"<td style='text-align:center'>{r.get('relation_verified_rows',r.get('verified_rows',0))}</td>"
+            f"</tr>"
+        )
 
-        # OncoKB display gating by allele_exist
-        is_error     = "unavailable" in ok_ml.lower() or "error" in ok_ml.lower()
-        allele_match = r.get("oncokb_allele_exist", False)
-        variant_match= r.get("oncokb_variant_exist", False)
-        gene_match   = r.get("oncokb_gene_exist", False)
+    # Per-variant sections
+    variant_sections = ""
+    for _, r in summary.iterrows():
+        gene     = r["gene"]
+        variant  = r.get("variant","")
+        vaf      = r.get("VAF",0)
+        clon     = r.get("vaf_clonality","LowVAF")
+        altcls   = r.get("alteration_class","unknown")
+        grole    = r.get("gene_role","unknown")
+        ok_onco  = r.get("oncokb_oncogenicity","Unknown")
+        ok_eff   = r.get("oncokb_mutation_effect","Unknown")
+        ok_ml    = r.get("oncokb_match_label","")
+        ok_drugs = r.get("oncokb_drugs","")
+        clinvar  = r.get("clinvar_pathogenicity","Unknown")
+        papers   = r.get("total_papers",0)
+        verif    = r.get("relation_verified_rows", r.get("verified_rows",0))
+        allele_m = bool(r.get("oncokb_allele_exist",False))
+        variant_m= bool(r.get("oncokb_variant_exist",False))
+        gene_m   = bool(r.get("oncokb_gene_exist",False))
+        is_err   = "unavailable" in str(ok_ml).lower() or "error" in str(ok_ml).lower()
 
-        if is_error:
-            ok_status_html = ('<span style="background:#b0b0b0;color:#fff;font-size:.7rem;'
-                              'padding:2px 8px;border-radius:20px">⚠️ OncoKB Unavailable</span>')
-            show_variant_drugs = False
-            drug_heading = ""
-        elif allele_match:
-            ok_status_html = (f'<span style="background:{ok_col};color:#fff;font-size:.7rem;'
-                              f'padding:2px 8px;border-radius:20px">{ok_lbl} · Exact allele recognized</span>')
-            show_variant_drugs = True
-            drug_heading = "OncoKB variant-matched therapies"
-        elif variant_match:
-            ok_status_html = (f'<span style="background:#f39c12;color:#fff;font-size:.7rem;'
-                              f'padding:2px 8px;border-radius:20px">{ok_lbl} · Variant/class recognized — allele not confirmed</span>')
-            show_variant_drugs = False
-            drug_heading = "Broader OncoKB therapies — not confirmed for this exact allele"
-        elif gene_match:
-            ok_status_html = ('<span style="background:#95a5a6;color:#fff;font-size:.7rem;'
-                              'padding:2px 8px;border-radius:20px">Gene recognized only — no variant-level annotation</span>')
-            show_variant_drugs = False
-            drug_heading = "Gene-level OncoKB context only — not patient-variant matched"
+        # Annotation status
+        if is_err:
+            ann_cls,ann_txt = "annotation-gene","OncoKB unavailable"
+        elif allele_m:
+            ann_cls,ann_txt = "annotation-exact","Exact allele recognized"
+        elif variant_m:
+            ann_cls = "annotation-broader"
+            ann_txt = "Variant/class recognized; exact allele not confirmed"
+        elif gene_m:
+            ann_cls = "annotation-gene"
+            ann_txt = "Gene recognized only — no variant-level annotation"
         else:
-            ok_status_html = ('<span style="background:#bdc3c7;color:#fff;font-size:.7rem;'
-                              'padding:2px 8px;border-radius:20px">No OncoKB match</span>')
-            show_variant_drugs = False
-            drug_heading = ""
+            ann_cls,ann_txt = "annotation-gene","No OncoKB match"
 
-        # Evidence rows with classification
+        # OncoKB drugs
+        if ok_drugs and not is_err:
+            if allele_m:
+                drugs_row = f"<strong>OncoKB variant-matched therapies:</strong> {ok_drugs}"
+            elif variant_m:
+                drugs_row = f"<em>Broader variant/class context (not allele-confirmed):</em> {ok_drugs}"
+            else:
+                drugs_row = f"<em>Gene-level context only (not variant-confirmed):</em> {ok_drugs}"
+        else:
+            drugs_row = "—"
+
+        # Conflict note
+        conflict_note = ""
+        if not is_err and not allele_m and ok_eff not in ("Unknown",""):
+            if ("gain" in ok_eff.lower() and altcls=="truncating") or \
+               ("loss" in ok_eff.lower() and altcls=="missense"):
+                who = ("gene-level context only"
+                       if gene_m and not variant_m
+                       else "broader variant/class")
+                conflict_note = (
+                    f"Interpretation note: MAF class is {altcls}, "
+                    f"while OncoKB effect is {ok_eff}. "
+                    f"OncoKB annotation is {who} and is not confirmed for this specific allele."
+                )
+
+        # Literature result
+        if papers == 0:
+            lit_result = "No therapeutic literature evidence was retrieved."
+        elif verif == 0:
+            lit_result = f"{papers} candidate record(s) retrieved; none passed verification."
+        else:
+            same  = int(r.get("same_cancer_verified_rows",0))
+            cross = int(r.get("cross_cancer_verified_rows",0))
+            lit_result = (
+                f"{papers} candidate record(s) retrieved; {verif} passed verification "
+                f"({same} same-cancer, {cross} cross-cancer)."
+            )
+
+        # Applicability notes
+        app_notes = []
+        if gene=="FGFR2" and altcls=="truncating":
+            app_notes.append("FGFR2 truncating alterations may not behave like activating mutations or fusions. Applicability not established.")
+        if gene=="ARID1A":
+            app_notes.append("ARID1A loss-of-function has been investigated as an IO-associated biomarker, but no patient-specific evidence was verified.")
+        if gene=="KEAP1":
+            app_notes.append("KEAP1 loss-of-function has conflicting IO evidence in NSCLC.")
+        if gene=="POLE":
+            app_notes.append("POLE mutation oncogenicity is Unknown. Hypermutator relevance requires TMB assessment.")
+        if gene=="MET":
+            app_notes.append("MET p.P325T is not a classical exon-14 skipping event; MET inhibitor applicability is uncertain.")
+        app_note = " ".join(app_notes) if app_notes else "No specific applicability notes."
+
+        # Evidence rows
         gene_ev = ranked[
             (ranked["query_gene"]==gene) &
             (ranked["patient_variant"].astype(str)==str(variant))
         ] if len(ranked)>0 else pd.DataFrame()
 
-        ev_rows_html = ""
+        ev_rows = ""
         for _, dr in gene_ev.iterrows():
             drug     = dr.get("drug_primary","?")
             ev       = dr.get(ev_col,"?")
@@ -800,311 +808,382 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
             cancer_m = bool(dr.get("patient_cancer_match",False))
             ev_class = dr.get("evidence_class",
                               classify_evidence(tier, cancer_m, is_res))
-            sent     = str(dr.get("summary_sentence",""))[:200]
-            ec_col   = EVIDENCE_CLASS_COLOR.get(ev_class,"#95a5a6")
-            ev_col2  = {"efficacy":"#27ae60","resistance":"#e74c3c",
-                        "background":"#95a5a6","safety":"#e67e22"}.get(ev,"#95a5a6")
+            sent     = str(dr.get("summary_sentence",""))[:280]
+            study    = str(dr.get("study_design","") or "")
+            ec_css   = {"Direct evidence":"evidence-direct",
+                        "Related evidence":"evidence-related",
+                        "Indirect evidence":"evidence-indirect",
+                        "Cross-cancer evidence":"evidence-cross",
+                        "Resistance evidence":"evidence-resistance"}.get(ev_class,"evidence-cross")
+            ev_css   = "evidence-resistance" if is_res else (
+                       "evidence-direct" if ev=="efficacy" else "evidence-cross")
+            ev_rows += (
+                f"<tr>"
+                f"<td><strong>{drug}</strong></td>"
+                f"<td><span class='evidence-label {ev_css}'>{ev}</span></td>"
+                f"<td>{'Same-cancer' if cancer_m else 'Cross-cancer'}</td>"
+                f"<td><span class='evidence-label {ec_css}'>{ev_class}</span></td>"
+                f"<td style='font-size:10.5px'>{tier.replace('_',' ')} ({spec:.2f})</td>"
+                f"<td style='font-size:10.5px'>{study or '—'}</td>"
+                f"<td><a href='https://pubmed.ncbi.nlm.nih.gov/{pmid}/' target='_blank'>{pmid}</a></td>"
+                f"<td style='font-size:10.5px;max-width:280px'>{sent}</td>"
+                f"<td style='font-size:10px;color:#6b7280'>{score:.3f}</td>"
+                f"</tr>"
+            )
+        if not ev_rows:
+            ev_rows = '<tr><td colspan="9" style="padding:10px;color:#6b7280;text-align:center">No verified evidence</td></tr>'
 
-            # Applicability statement
-            if ev_class == "Direct evidence":
-                applicability = "Exact variant + same cancer: strongest evidence"
-            elif ev_class == "Related evidence":
-                applicability = "Same alteration class + same cancer: moderate evidence"
-            elif ev_class == "Indirect evidence":
-                applicability = "Gene-level only: applicability to this variant not established"
-            elif ev_class == "Cross-cancer evidence":
-                applicability = "Different tumour type: cancer-context transfer required"
-            elif ev_class == "Resistance evidence":
-                applicability = "Resistance signal: drug may be ineffective"
-            else:
-                applicability = "Insufficient evidence for this variant"
+        ev_status = ("Same-cancer verified"
+                     if int(r.get("same_cancer_verified_rows",0))>0
+                     else "Cross-cancer only"
+                     if int(r.get("cross_cancer_verified_rows",0))>0
+                     else "No verified evidence")
 
-            ev_rows_html += f"""
-            <tr>
-              <td><strong>{drug}</strong></td>
-              <td><span style="color:{ev_col2};font-weight:600">{ev}</span></td>
-              <td><span style="background:{ec_col};color:#fff;font-size:.68rem;
-                               padding:2px 7px;border-radius:20px">{ev_class}</span></td>
-              <td style="font-size:.72rem">{tier.replace("_"," ")} ({spec:.2f})</td>
-              <td>{score:.3f}</td>
-              <td><a href="https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
-                     target="_blank" style="color:#5b4fcf">{pmid}</a></td>
-              <td style="font-size:.7rem;color:#475569;max-width:280px">{sent}</td>
-              <td style="font-size:.7rem;color:#64748b;font-style:italic">{applicability}</td>
-            </tr>"""
+        conflict_row = (
+            f"<div class='interpretation-row interpretation-warning'>"
+            f"<div class='interpretation-label'>Interpretation note</div>"
+            f"<div>{conflict_note}</div></div>"
+        ) if conflict_note else ""
 
-        if not ev_rows_html:
-            ev_rows_html = '<tr><td colspan="8" style="color:#94a3b8;text-align:center;padding:12px">No verified evidence found for this variant</td></tr>'
+        variant_sections += f"""
+<article class="variant-section">
+  <div class="variant-header">
+    <div>
+      <h3>{gene} <span>{variant}</span></h3>
+      <div class="variant-meta-line">VAF {vaf:.3f} · {clon} · {grole} · {altcls}</div>
+    </div>
+    <div class="annotation-status {ann_cls}">{ann_txt}</div>
+  </div>
+  <div class="variant-information-grid">
+    <div><span class="field-label">Oncogenicity</span><span class="field-value">{ok_onco}</span></div>
+    <div><span class="field-label">Mutation effect</span><span class="field-value">{ok_eff}</span></div>
+    <div><span class="field-label">ClinVar</span><span class="field-value">{clinvar}</span></div>
+    <div><span class="field-label">Evidence status</span><span class="field-value">{ev_status}</span></div>
+  </div>
+  <div class="interpretation-block">
+    <div class="interpretation-row">
+      <div class="interpretation-label">Literature result</div>
+      <div>{lit_result}</div>
+    </div>
+    <div class="interpretation-row">
+      <div class="interpretation-label">OncoKB context</div>
+      <div>{drugs_row}</div>
+    </div>
+    {conflict_row}
+    <div class="interpretation-row interpretation-warning">
+      <div class="interpretation-label">Applicability</div>
+      <div>{app_note}</div>
+    </div>
+  </div>
+  <div class="table-wrap" style="margin:0">
+    <table class="clinical-table">
+      <thead><tr>
+        <th>Drug</th><th>Direction</th><th>Cancer context</th>
+        <th>Evidence class</th><th>Specificity</th><th>Study design</th>
+        <th>PMID</th><th>Evidence sentence</th><th>Priority score*</th>
+      </tr></thead>
+      <tbody>{ev_rows}</tbody>
+    </table>
+    <p class="table-footnote">*Priority score ranks retrieved literature evidence and does not estimate treatment response probability.</p>
+  </div>
+</article>"""
 
-        gene_cards += f"""
-        <div style="background:#fff;border-radius:10px;
-                    box-shadow:0 2px 8px rgba(0,0,0,.06);
-                    overflow:hidden;margin-bottom:16px">
-          <div style="padding:14px;background:#f8fafc;border-bottom:1px solid #e2e8f0">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-              <strong style="font-size:1.15rem;color:#1e2d3d">{gene}</strong>
-              <code style="font-size:.75rem;background:#e2e8f0;padding:2px 8px;
-                           border-radius:20px;color:#475569">{variant}</code>
-              <span style="font-size:.72rem;padding:3px 9px;border-radius:20px;
-                           color:#fff;background:{vcol}">VAF {vaf:.3f} · {clon}</span>
-              {ok_status_html}
-            </div>
-            <div style="display:flex;flex-wrap:wrap;gap:5px">
-              <span style="font-size:.72rem;background:#fff;padding:2px 7px;
-                           border:1px solid #e2e8f0;border-radius:4px;color:#475569">
-                🧬 Oncogenicity: {ok_onco}</span>
-              <span style="font-size:.72rem;background:#fff;padding:2px 7px;
-                           border:1px solid #e2e8f0;border-radius:4px;color:#475569">
-                ⚙️ Mutation effect: {ok_eff}</span>
-              <span style="font-size:.72rem;background:#fff;padding:2px 7px;
-                           border:1px solid #e2e8f0;border-radius:4px;color:#475569">
-                🔬 ClinVar: {clinvar}</span>
-              <span style="font-size:.72rem;background:#fff;padding:2px 7px;
-                           border:1px solid #e2e8f0;border-radius:4px;color:#475569">
-                📌 {grole} · {altcls}</span>
-              {f'<span style="font-size:.72rem;background:#dbeafe;padding:2px 7px;border-radius:4px;color:#1e40af">💊 {drug_heading}: {ok_drugs}</span>' if ok_drugs and not is_error and show_variant_drugs else
-               f'<span style="font-size:.72rem;background:#f1f5f9;padding:2px 7px;border-radius:4px;color:#64748b">ℹ️ {drug_heading}: {ok_drugs}</span>' if ok_drugs and not is_error and not show_variant_drugs else ''}
-            </div>
-            <div style="margin-top:8px;font-size:.75rem;color:#64748b;
-                        background:#f1f5f9;padding:6px 10px;border-radius:6px">
-              <strong>Applicability note:</strong>
-              {"No therapeutic literature evidence was retrieved for this gene under the current query settings." if papers==0 else
-               "Literature records were retrieved, but none passed relation and context verification." if verified==0 else
-               "Literature evidence retrieved and graded by alteration specificity and cancer context."}
-              {(f" ✅ Concordance: MAF class={altcls} is consistent with OncoKB effect={ok_eff}."
-                if not is_error and allele_match and
-                   (("gain" in ok_eff.lower() and altcls=="missense") or
-                    ("loss" in ok_eff.lower() and altcls=="truncating"))
-                else
-                f" ⚠️ Interpretation note: MAF class={altcls}, OncoKB effect={ok_eff} — "
-                f"{"OncoKB annotation is gene-level context only" if gene_match and not variant_match else "OncoKB functional annotation applies to broader variant/class"} "
-                f"and is not confirmed for this specific allele."
-                if not is_error and not allele_match and ok_eff not in ("Unknown","") and altcls in ("truncating","missense")
-                else "")}
-              {" FGFR2 truncating variants (loss-of-function in an oncogene) may not respond like activating mutations or fusions — applicability not established." if gene=="FGFR2" and altcls=="truncating" else ""}
-              {" ARID1A loss-of-function has been investigated as an immunotherapy-associated biomarker, but no patient-specific evidence was verified in this analysis." if gene=="ARID1A" else ""}
-              {" KEAP1 loss-of-function has conflicting immunotherapy evidence in NSCLC. No patient-specific evidence verified here." if gene=="KEAP1" else ""}
-              {" POLE mutation oncogenicity is Unknown in this report. Hypermutator relevance requires independent pathogenicity and TMB assessment." if gene=="POLE" else ""}
-              {" MET P325T is not a classical exon-14 skipping event; MET inhibitor applicability is uncertain." if gene=="MET" else ""}
-            </div>
-          </div>
-          <div style="display:flex;border-bottom:1px solid #f1f5f9">
-            <div style="flex:1;text-align:center;padding:9px;border-right:1px solid #f1f5f9">
-              <div style="font-size:1.1rem;font-weight:700;color:#5b4fcf">{papers}</div>
-              <div style="font-size:.6rem;color:#64748b;text-transform:uppercase">Candidate Records</div>
-            </div>
-            <div style="flex:1;text-align:center;padding:9px">
-              <div style="font-size:1.1rem;font-weight:700;color:#5b4fcf">{verified}</div>
-              <div style="font-size:.6rem;color:#64748b;text-transform:uppercase">Relation Verified</div>
-            </div>
-          </div>
-          <div style="padding:10px;overflow-x:auto">
-            <table style="width:100%;border-collapse:collapse;font-size:.76rem">
-              <thead><tr style="background:#f8fafc">
-                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">Drug</th>
-                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">Direction</th>
-                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">Evidence Class</th>
-                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">Specificity</th>
-                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">Score</th>
-                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">PMID</th>
-                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">Evidence Sentence</th>
-                <th style="padding:5px 7px;border-bottom:2px solid #e2e8f0;text-align:left;font-size:.66rem;color:#64748b">Applicability</th>
-              </tr></thead>
-              <tbody>{ev_rows_html}</tbody>
-            </table>
-          </div>
-        </div>"""
+    # Trials
+    if trials_df is not None and len(trials_df)>0:
+        t_rows = ""
+        for _, tr in trials_df.iterrows():
+            phase = tr.get("highest_phase","") or ""
+            n_t   = tr.get("n_trials","") or 0
+            if not phase or str(n_t) in ("0",""): continue
+            t_rows += (
+                f"<tr>"
+                f"<td><strong>{tr.get('drug','') or tr.get('drug_primary','')}</strong></td>"
+                f"<td>{tr.get('gene','') or tr.get('biomarker','')}</td>"
+                f"<td>{tr.get('cancer_type','') or tr.get('canonical_cancer_type','')}</td>"
+                f"<td>{phase}</td><td>{n_t}</td>"
+                f"<td style='color:#9b3a3a'>{tr.get('n_failed',0)}</td>"
+                f"</tr>"
+            )
+        if t_rows:
+            trials_html = (
+                "<div class='table-wrap'>"
+                "<table class='clinical-table'>"
+                "<thead><tr><th>Drug</th><th>Gene</th><th>Cancer</th>"
+                "<th>Highest phase</th><th>Total trials</th><th>Failed/terminated</th>"
+                "</tr></thead><tbody>" + t_rows + "</tbody></table></div>"
+            )
+        else:
+            trials_html = '<div class="empty-state">No trials with confirmed phase information were identified.</div>'
+    else:
+        trials_html = '<div class="empty-state">No complete ClinicalTrials.gov linkage was identified for the relation-verified evidence.</div>'
 
-    # ── Co-mutation hypotheses (supplementary) ─────────────────
-    comut_html = ""
+    # Hypotheses
+    hyp_items = ""
     for c in comutations:
-        conf  = c.get("confidence","Low")
-        cc    = {"Low":"#e74c3c","Medium":"#f39c12"}.get(conf.split("—")[0].strip(),"#e74c3c")
-        comut_html += f"""
-        <div style="background:#fff;border-radius:8px;padding:12px;
-                    margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.05)">
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
-            <strong style="font-size:.9rem">{c["pattern"]}</strong>
-            <span style="background:{cc};color:#fff;font-size:.68rem;
-                         padding:2px 7px;border-radius:20px">{c["effect"]}</span>
-            <span style="background:#f1f5f9;color:#475569;font-size:.68rem;
-                         padding:2px 7px;border-radius:20px">Confidence: {conf}</span>
-          </div>
-          <div style="font-size:.78rem;color:#475569;line-height:1.5;
-                      background:#fff3cd;padding:7px 10px;border-radius:5px;
-                      border-left:3px solid #f39c12">{c["note"]}</div>
-          <div style="font-size:.7rem;color:#94a3b8;margin-top:4px">Refs: {c["refs"]}</div>
-        </div>"""
-    if not comut_html:
-        comut_html = "<p style='color:#94a3b8;font-size:.82rem'>No patterns detected.</p>"
+        hyp_items += (
+            f"<div class='hypothesis-item'>"
+            f"<div class='hypothesis-title'>{c['pattern']} — {c['effect']}</div>"
+            f"<div class='hypothesis-note'>"
+            f"<strong>Suggested context:</strong> {c['drug']}<br>"
+            f"<strong>Confidence:</strong> {c.get('confidence','Low')}<br>"
+            f"{c['note']}<br>"
+            f"<em>References: {c['refs']}</em>"
+            f"</div></div>"
+        )
+    if not hyp_items:
+        hyp_items = '<div class="empty-state">No co-mutation patterns detected.</div>'
 
-    html = f"""<!DOCTYPE html>
+    # Verification table
+    verif_rows = "".join([
+        f"<tr><td>{s}</td><td>{n}</td><td>{d}</td></tr>"
+        for s,n,d in [
+            ("1","Gene normalization","Gene normalized against HGNC approved symbol list (44,597 genes)"),
+            ("2","Drug normalization","Drug normalized against curated oncology whitelist (254 agents)"),
+            ("3","Relation check","Query gene and drug required in evidence relation; gene-absent rows rejected"),
+            ("4","Negation/speculation","Negated or speculative statements excluded by offline LLM verifier"),
+            ("5","Evidence specificity","Graded: exact alteration (1.00), alteration class (0.75), gene-level (0.45)"),
+            ("6","Cancer context","Classified as same-cancer or cross-cancer using normalized aliases"),
+            ("7","OncoKB annotation","Separated by exact-allele, broader variant/class, gene-only, or no match"),
+        ]
+    ])
+
+    CSS = """
+:root{--navy-900:#17324d;--navy-700:#28506f;--slate-900:#1f2933;--slate-700:#4b5563;
+--slate-500:#6b7280;--slate-300:#d1d5db;--slate-200:#e5e7eb;--slate-100:#f3f4f6;
+--slate-050:#f8fafc;--white:#ffffff;--green-700:#2f6b4f;--green-100:#e8f3ed;
+--amber-700:#8a5a16;--amber-100:#fbf3df;--red-700:#9b3a3a;--red-100:#f8e8e8;
+--blue-700:#315f8c;--blue-100:#eaf1f8;}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,"Source Sans 3","Segoe UI",Helvetica,Arial,sans-serif;
+background:#eef1f4;color:var(--slate-900);font-size:13px;line-height:1.55}
+a{color:var(--blue-700)}
+code{font-family:"SFMono-Regular",Consolas,monospace}
+.report-shell{max-width:1180px;margin:28px auto;background:var(--white);
+border:1px solid var(--slate-200);box-shadow:0 4px 18px rgba(15,23,42,0.08)}
+.report-header{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:32px;
+padding:30px 34px 26px;border-top:7px solid var(--navy-900);
+border-bottom:1px solid var(--slate-200)}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.11em;text-transform:uppercase;
+color:var(--navy-700);margin-bottom:7px}
+.report-title{font-size:24px;line-height:1.25;font-weight:700;
+letter-spacing:-.02em;color:var(--navy-900)}
+.report-subtitle{margin-top:7px;font-size:12px;color:var(--slate-500)}
+.report-meta{display:grid;grid-template-columns:1fr 1fr;gap:13px 18px;font-size:12px}
+.report-meta div{color:var(--slate-900);font-weight:600}
+.report-meta span{display:block;margin-bottom:2px;color:var(--slate-500);
+font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.notice{margin:22px 34px 0;padding:13px 16px;
+border-left:4px solid var(--amber-700);background:var(--amber-100)}
+.notice-title{margin-bottom:4px;color:var(--amber-700);font-size:12px;font-weight:700}
+.notice p{margin:0;font-size:12px;line-height:1.5;color:#5f4a27}
+.report-section{padding:24px 34px}
+.section-heading{display:flex;align-items:center;justify-content:space-between;
+padding-bottom:8px;margin-bottom:14px;border-bottom:2px solid var(--navy-900)}
+.section-heading h2{margin:0;font-size:15px;font-weight:700;color:var(--navy-900)}
+.summary-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));
+border:1px solid var(--slate-200)}
+.summary-item{padding:13px 12px;border-right:1px solid var(--slate-200);background:var(--white)}
+.summary-item:last-child{border-right:0}
+.summary-label{display:block;margin-bottom:5px;color:var(--slate-500);
+font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+.summary-value{font-size:20px;line-height:1;font-weight:700;color:var(--navy-900)}
+.table-wrap{overflow-x:auto;border:1px solid var(--slate-200)}
+.clinical-table{width:100%;border-collapse:collapse;font-size:11.5px}
+.clinical-table th{padding:9px 10px;text-align:left;color:var(--white);
+background:var(--navy-900);font-weight:600;white-space:nowrap}
+.clinical-table td{padding:9px 10px;border-bottom:1px solid var(--slate-200);vertical-align:top}
+.clinical-table tbody tr:nth-child(even){background:var(--slate-050)}
+.clinical-table tbody tr:last-child td{border-bottom:0}
+.table-footnote{padding:6px 10px;font-size:10.5px;color:var(--slate-500);
+border-top:1px solid var(--slate-200);background:var(--slate-050)}
+.variant-section{margin-bottom:20px;border:1px solid var(--slate-200);page-break-inside:avoid}
+.variant-header{display:flex;justify-content:space-between;align-items:flex-start;
+gap:18px;padding:14px 16px;background:var(--slate-050);border-bottom:1px solid var(--slate-200)}
+.variant-header h3{margin:0;font-size:16px;color:var(--navy-900);font-weight:700}
+.variant-header h3 span{margin-left:7px;color:var(--slate-700);
+font-family:"SFMono-Regular",Consolas,monospace;font-size:13px;font-weight:500}
+.variant-meta-line{margin-top:5px;font-size:11px;color:var(--slate-500)}
+.annotation-status{max-width:310px;padding:6px 9px;border:1px solid var(--slate-300);
+background:var(--white);font-size:10.5px;line-height:1.35;text-align:right}
+.annotation-exact{color:var(--green-700);border-color:#a9cbb8;background:var(--green-100)}
+.annotation-broader{color:var(--amber-700);border-color:#ddc68b;background:var(--amber-100)}
+.annotation-gene{color:var(--slate-700);background:var(--slate-100)}
+.variant-information-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+border-bottom:1px solid var(--slate-200)}
+.variant-information-grid>div{padding:11px 14px;border-right:1px solid var(--slate-200)}
+.variant-information-grid>div:last-child{border-right:0}
+.field-label{display:block;margin-bottom:3px;font-size:9.5px;font-weight:700;
+color:var(--slate-500);letter-spacing:.04em;text-transform:uppercase}
+.field-value{display:block;font-size:12px;color:var(--slate-900)}
+.interpretation-block{margin:0;border-bottom:1px solid var(--slate-200)}
+.interpretation-row{display:grid;grid-template-columns:150px 1fr;gap:15px;
+padding:9px 14px;border-bottom:1px solid var(--slate-200);font-size:11.5px;line-height:1.45}
+.interpretation-row:last-child{border-bottom:0}
+.interpretation-label{color:var(--slate-500);font-weight:700;
+text-transform:uppercase;font-size:9.5px;letter-spacing:.04em}
+.interpretation-warning{background:var(--amber-100)}
+.evidence-label{display:inline-block;padding:3px 6px;border-radius:2px;
+font-size:9.5px;font-weight:700;line-height:1.2}
+.evidence-direct{color:var(--green-700);background:var(--green-100)}
+.evidence-related{color:var(--blue-700);background:var(--blue-100)}
+.evidence-indirect{color:var(--amber-700);background:var(--amber-100)}
+.evidence-cross{color:var(--slate-700);background:var(--slate-100)}
+.evidence-resistance{color:var(--red-700);background:var(--red-100)}
+.hypothesis-item{padding:12px 0;border-bottom:1px solid var(--slate-200)}
+.hypothesis-item:last-child{border-bottom:0}
+.hypothesis-title{font-size:12px;font-weight:700;color:var(--slate-900)}
+.hypothesis-note{margin-top:4px;font-size:11px;color:var(--slate-700);line-height:1.5}
+.empty-state{padding:14px 16px;border:1px solid var(--slate-200);
+background:var(--slate-050);color:var(--slate-500);font-size:12px}
+.report-footer{display:flex;justify-content:space-between;gap:20px;
+padding:16px 34px;border-top:1px solid var(--slate-200);
+color:var(--slate-500);font-size:10.5px}
+@media print{
+@page{size:A4;margin:14mm}
+body{font-size:10pt;background:#fff}
+.report-shell{max-width:none;margin:0;border:0;box-shadow:none}
+.variant-section{break-inside:avoid}
+a{color:inherit;text-decoration:none}
+.clinical-table th{background:#e5e7eb!important;color:#111827!important;border:1px solid #9ca3af}
+.clinical-table td{border:1px solid #d1d5db}
+}
+@media(max-width:900px){
+.report-header{grid-template-columns:1fr}
+.summary-grid{grid-template-columns:repeat(3,1fr)}
+.variant-information-grid{grid-template-columns:repeat(2,1fr)}
+.interpretation-row{grid-template-columns:1fr;gap:4px}
+}"""
+
+    HTML = f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>megaMine v2.0 — {patient_id}</title>
-<style>
-  :root{{--navy:#1e2d3d;--blue:#5b4fcf;--font:'Segoe UI',system-ui,sans-serif}}
-  *{{box-sizing:border-box;margin:0;padding:0}}
-  body{{font-family:var(--font);background:#f0f4f8;color:#1e293b;font-size:14px}}
-  a{{color:var(--blue)}}
-  .hdr{{background:linear-gradient(135deg,#1e2d3d,#5b4fcf);color:#fff;padding:24px 32px}}
-  .hdr h1{{font-size:1.4rem;font-weight:800}}
-  .hdr p{{opacity:.8;margin-top:4px;font-size:.84rem}}
-  .disc{{background:#fff3cd;border-left:4px solid #f39c12;padding:10px 18px;
-         margin:12px 32px;border-radius:6px;font-size:.78rem;color:#856404}}
-  .metrics{{display:flex;flex-wrap:wrap;gap:8px;padding:0 32px 16px}}
-  .m{{background:#fff;border-radius:8px;padding:10px 14px;text-align:center;
-      box-shadow:0 2px 6px rgba(0,0,0,.05);border-top:3px solid var(--blue);min-width:90px}}
-  .mv{{font-size:1.25rem;font-weight:800;color:var(--navy)}}
-  .ml{{font-size:.58rem;color:#64748b;text-transform:uppercase;margin-top:2px}}
-  .sec{{padding:0 32px 22px}}
-  .st{{font-size:.9rem;font-weight:700;color:var(--navy);margin-bottom:10px;
-       padding-bottom:5px;border-bottom:2px solid #e2e8f0}}
-  .legend{{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}}
-  .leg{{font-size:.72rem;padding:3px 9px;border-radius:20px;color:#fff;font-weight:600}}
-  footer{{text-align:center;padding:14px;color:#64748b;font-size:.67rem;
-          border-top:1px solid #e2e8f0;margin-top:14px}}
-</style>
+<title>Patient-Guided Literature Evidence Report — {patient_id}</title>
+<style>{CSS}</style>
 </head><body>
-<div class="hdr">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
-    <div>
-      <div style="font-size:.75rem;opacity:.7;text-transform:uppercase;
-                  letter-spacing:.08em;margin-bottom:4px">
-        Precision Oncology Evidence Report · Confidential
-      </div>
-      <h1 style="font-size:1.5rem;font-weight:700;letter-spacing:-.01em">
-        Patient-Guided Literature Evidence Report
-      </h1>
-      <p style="opacity:.75;margin-top:5px;font-size:.85rem">
-        Patient: <strong>{patient_id}</strong> &nbsp;·&nbsp;
-        Cancer type: <strong>{cancer}</strong> &nbsp;·&nbsp;
-        Generated by megaMine v2.0
-      </p>
-    </div>
-    <div style="text-align:right;font-size:.72rem;opacity:.65;line-height:1.8">
-      <div>APML · Ajou University Medical Center</div>
-      <div>Analysis scope: literature evidence synthesis</div>
-      <div>This report does not constitute clinical advice</div>
-    </div>
-  </div>
-</div>
-<div class="disc">
-  ⚠️ <strong>Important:</strong>
-  This report presents literature-derived evidence retrieved and graded
-  by the megaMine v2.0 pipeline. It is intended to support expert review,
-  not to replace clinical judgement.
-  <strong>It is not a treatment recommendation.</strong>
-  Evidence specificity is graded from exact alteration to gene-level.
-  All findings should be interpreted by a qualified oncologist with
-  access to the complete clinical record.
-</div>
-<div style="background:#f0f4f8;border:1px solid #e2e8f0;border-radius:6px;
-            padding:10px 18px;margin:0 32px 12px;font-size:.75rem;color:#475569">
-  <strong>Methodology:</strong>
-  Somatic variants were extracted from the MAF file and filtered to
-  cancer-relevant genes. For each variant, PubMed was queried using a
-  three-tier search strategy: (1) exact protein alteration, (2) alteration
-  class, and (3) gene-level. Retrieved records were normalized, deduplicated,
-  and verified by the megaMine offline LLM verifier. Evidence is graded by
-  specificity weight (exact=1.00, class=0.75, gene=0.45) and cancer-context
-  match. OncoKB was queried using the patient protein alteration; annotations were classified as exact-allele, broader variant/class, gene-only, or no match. Results are
-  categorized as direct, related, indirect, or cross-cancer evidence.
-  VAF is used as a clonality confidence modifier, not a primary actionability tier.
-</div>
-<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;
-            padding:8px 18px;margin:0 32px 12px;font-size:.76rem;color:#475569">
-  <strong>OncoKB API:</strong>
-  {("Available" if any(r.get("oncokb_gene_exist",False) for _,r in summary.iterrows()) else "Unavailable — API could not be reached")} &nbsp;|&nbsp;
-  Variants queried: {len(summary)} &nbsp;|&nbsp;
-  Exact allele: {sum(1 for _,r in summary.iterrows() if r.get("oncokb_allele_exist",False))} &nbsp;|&nbsp;
-  Variant/class only: {sum(1 for _,r in summary.iterrows() if r.get("oncokb_variant_exist",False) and not r.get("oncokb_allele_exist",False))} &nbsp;|&nbsp;
-  Gene recognized: {sum(1 for _,r in summary.iterrows() if r.get("oncokb_gene_exist",False) and not r.get("oncokb_variant_exist",False) and not r.get("oncokb_allele_exist",False))} &nbsp;|&nbsp;
-  No match: {sum(1 for _,r in summary.iterrows() if not r.get("oncokb_gene_exist",False) and not r.get("oncokb_variant_exist",False) and not r.get("oncokb_allele_exist",False))}
-  &nbsp;|&nbsp;
-  <strong>Same-cancer verified evidence:</strong>
-  {int(summary["same_cancer_verified_rows"].sum()) if "same_cancer_verified_rows" in summary.columns else 0} rows
-  &nbsp;|&nbsp;
-  <strong>Cross-cancer evidence:</strong>
-  {int(summary["cross_cancer_verified_rows"].sum()) if "cross_cancer_verified_rows" in summary.columns else 0} rows
-</div>
-<div class="metrics">
-  <div class="m"><div class="mv">{len(summary)}</div><div class="ml">Variants</div></div>
-  <div class="m" style="border-color:#27ae60">
-    <div class="mv" style="color:#27ae60">{n_clonal}</div><div class="ml">Clonal</div></div>
-  <div class="m" style="border-color:#f39c12">
-    <div class="mv" style="color:#f39c12">{n_subclonal}</div><div class="ml">Subclonal</div></div>
-  <div class="m" style="border-color:#e74c3c">
-    <div class="mv" style="color:#e74c3c">{n_lowvaf}</div><div class="ml">Low VAF</div></div>
-  <div class="m"><div class="mv">{total_papers}</div><div class="ml">Candidate Records</div></div>
-  <div class="m" style="border-color:#1F78B4">
-    <div class="mv" style="color:#1F78B4">{total_verified}</div>
-    <div class="ml">Relation Verified</div></div>
-  <div class="m" style="border-color:#27ae60">
-    <div class="mv" style="color:#27ae60">{int(summary["same_cancer_verified_rows"].sum()) if "same_cancer_verified_rows" in summary.columns else 0}</div>
-    <div class="ml">Same-Cancer</div></div>
-</div>
+<div class="report-shell">
 
-<div class="sec">
-  <div class="st">🧬 Per-Variant Evidence with Specificity Grading</div>
-  <div class="legend">
-    <span class="leg" style="background:#27ae60">Direct — exact variant, same cancer</span>
-    <span class="leg" style="background:#1F78B4">Related — alteration class, same cancer</span>
-    <span class="leg" style="background:#f39c12">Indirect — gene-level, same cancer</span>
-    <span class="leg" style="background:#95a5a6">Cross-cancer — different tumour type</span>
-    <span class="leg" style="background:#e74c3c">Resistance evidence</span>
-  </div>
-  {gene_cards}
-</div>
-
-<div class="sec">
-  <div class="st">🏥 ClinicalTrials.gov Linkage</div>
-  {trials_section}
-</div>
-
-<div class="sec">
-  <div class="st">🔗 Exploratory Co-mutation Hypothesis Signals
-    <span style="font-size:.72rem;font-weight:400;color:#e74c3c;margin-left:8px">
-    ⚠️ Hypothesis-generating only — NOT validated biomarkers — require confirmation</span>
-  </div>
-  {comut_html}
-</div>
-
-<div class="sec">
-  <div class="st">✅ Verification Ladder</div>
-  <div style="display:flex;flex-direction:column;gap:4px">
-    <div style="padding:6px 10px;background:#d4edda;color:#155724;border-radius:5px;font-size:.77rem">✅ Entity verified — gene in HGNC, drug in curated whitelist</div>
-    <div style="padding:6px 10px;background:#d4edda;color:#155724;border-radius:5px;font-size:.77rem">✅ Sentence relation verified — gene–drug co-mention</div>
-    <div style="padding:6px 10px;background:#d4edda;color:#155724;border-radius:5px;font-size:.77rem">✅ Deduplication — PMID+gene+drug+cancer+tier+variant</div>
-    <div style="padding:6px 10px;background:#fff3cd;color:#856404;border-radius:5px;font-size:.77rem">⚡ Three-tier specificity — exact (1.00) · class (0.75) · gene (0.45)</div>
-    <div style="padding:6px 10px;background:#fff3cd;color:#856404;border-radius:5px;font-size:.77rem">⚡ Evidence direction — efficacy/resistance/background by offline LLM</div>
-    <div style="padding:6px 10px;background:#d1ecf1;color:#0c5460;border-radius:5px;font-size:.77rem">ℹ️ VAF as confidence modifier — not primary actionability tier</div>
-    <div style="padding:6px 10px;background:#d1ecf1;color:#0c5460;border-radius:5px;font-size:.77rem">ℹ️ OncoKB exact alteration annotation (when available)</div>
-  </div>
-</div>
-
-<footer>
-  <div style="margin-bottom:4px">
-    <strong>megaMine v2.0</strong> · Precision Medicine Laboratory (APML) ·
-    Ajou University Medical Center · Republic of Korea
-  </div>
+<header class="report-header">
   <div>
-    This report was generated by an automated literature evidence synthesis
-    pipeline and has not been reviewed by a clinician.
-    It should not be used for clinical decision-making without expert review.
+    <div class="eyebrow">Precision Oncology Evidence Report · Confidential</div>
+    <h1 class="report-title">Patient-Guided Literature Evidence Report</h1>
+    <div class="report-subtitle">Generated by megaMine v2.0 · APML, Ajou University</div>
   </div>
-  <div style="margin-top:4px;color:#94a3b8">
-    OncoKB annotations © Memorial Sloan Kettering Cancer Center (oncokb.org) ·
-    Academic use · Literature sources via PubMed (NCBI)
+  <div class="report-meta">
+    <div><span>Patient ID</span>{patient_id}</div>
+    <div><span>Cancer type</span>{cancer}</div>
+    <div><span>Institution</span>Ajou University Medical Center</div>
+    <div><span>Report scope</span>Literature evidence synthesis</div>
   </div>
+</header>
+
+<section class="notice" style="margin-bottom:0">
+  <div class="notice-title">Important interpretation notice</div>
+  <p>This report presents literature-derived evidence retrieved and graded by megaMine.
+  It supports expert review and does not constitute a treatment recommendation.
+  All findings should be interpreted by a qualified oncologist.</p>
+</section>
+
+<section class="report-section" style="padding-top:14px;padding-bottom:14px;
+     background:var(--slate-050);border-bottom:1px solid var(--slate-200)">
+  <div style="font-size:11.5px;color:var(--slate-700);line-height:1.6">
+    <strong style="color:var(--slate-900)">Methodology:</strong>
+    Somatic variants filtered to cancer-relevant genes.
+    PubMed queried by three-tier strategy:
+    (1)&nbsp;exact protein alteration (weight&nbsp;1.00),
+    (2)&nbsp;alteration class (0.75),
+    (3)&nbsp;gene-level (0.45).
+    Records normalized, deduplicated, and verified by offline LLM.
+    OncoKB queried per patient protein alteration; annotations classified as
+    exact-allele, broader variant/class, gene-only, or no match.
+    VAF is a clonality confidence modifier, not a primary actionability tier.
+    Patient drug ranking uses same-cancer verified evidence only.
+  </div>
+</section>
+
+<section class="report-section">
+  <div class="section-heading"><h2>Analysis Summary</h2></div>
+  <div class="summary-grid">
+    <div class="summary-item"><span class="summary-label">Variants analyzed</span><span class="summary-value">{n_variants}</span></div>
+    <div class="summary-item"><span class="summary-label">Candidate records</span><span class="summary-value">{n_candidates}</span></div>
+    <div class="summary-item"><span class="summary-label">Relation verified</span><span class="summary-value">{n_rel_verified}</span></div>
+    <div class="summary-item"><span class="summary-label">Same-cancer evidence</span><span class="summary-value">{n_same_cancer}</span></div>
+    <div class="summary-item"><span class="summary-label">Cross-cancer evidence</span><span class="summary-value">{n_cross_cancer}</span></div>
+    <div class="summary-item"><span class="summary-label">Exact allele matches</span><span class="summary-value">{n_exact_allele}</span></div>
+  </div>
+  <div style="margin-top:8px;font-size:11px;color:var(--slate-500)">
+    OncoKB: {n_exact_allele} exact allele · {n_variant_class} variant/class · {n_gene_only} gene-only
+  </div>
+</section>
+
+<section class="report-section" style="padding-top:0">
+  <div class="section-heading"><h2>Variant Overview</h2></div>
+  <div class="table-wrap">
+    <table class="clinical-table">
+      <thead><tr>
+        <th>Gene</th><th>Variant</th><th>VAF</th><th>Clonality</th>
+        <th>Variant class</th><th>OncoKB match</th>
+        <th>Candidate records</th><th>Relation verified</th>
+      </tr></thead>
+      <tbody>{var_rows}</tbody>
+    </table>
+  </div>
+</section>
+
+<section class="report-section" style="padding-top:0">
+  <div class="section-heading">
+    <h2>Per-Variant Evidence</h2>
+    <span style="font-size:11px;font-weight:400;color:var(--slate-500)">Score does not estimate response probability</span>
+  </div>
+  {variant_sections}
+</section>
+
+<section class="report-section" style="padding-top:0">
+  <div class="section-heading"><h2>ClinicalTrials.gov Linkage</h2></div>
+  {trials_html}
+</section>
+
+<section class="report-section" style="padding-top:0;background:var(--slate-050);border-top:1px solid var(--slate-300)">
+  <div class="section-heading"><h2>Exploratory Co-mutation Hypotheses</h2></div>
+  <div style="margin-bottom:10px;padding:8px 10px;background:var(--amber-100);
+       border-left:3px solid var(--amber-700);font-size:11.5px;color:#5f4a27">
+    Exploratory hypotheses are not validated therapeutic biomarkers and are not included in patient-level evidence ranking.
+  </div>
+  {hyp_items}
+</section>
+
+<section class="report-section" style="padding-top:0">
+  <div class="section-heading"><h2>Verification Framework</h2></div>
+  <div class="table-wrap">
+    <table class="clinical-table">
+      <thead><tr><th>Stage</th><th>Validation rule</th><th>Description</th></tr></thead>
+      <tbody>{verif_rows}</tbody>
+    </table>
+  </div>
+</section>
+
+<section class="report-section" style="padding-top:0;background:var(--slate-050);border-top:1px solid var(--slate-200)">
+  <div class="section-heading"><h2>Limitations</h2></div>
+  <div style="font-size:11.5px;color:var(--slate-700);line-height:1.7">
+    <p style="margin-bottom:6px"><strong>Literature coverage:</strong> Evidence retrieval is limited to PubMed-indexed publications matching the query terms.</p>
+    <p style="margin-bottom:6px"><strong>Evidence specificity:</strong> Most retrieved evidence is gene-level. Gene-level evidence cannot be assumed to apply to the patient-specific alteration.</p>
+    <p style="margin-bottom:6px"><strong>OncoKB annotation:</strong> Non-allele-specific annotations may not correspond to the patient variant's actual therapeutic relevance.</p>
+    <p><strong>No clinical validation:</strong> This report has not been validated in a clinical setting. All findings require expert oncologist review.</p>
+  </div>
+</section>
+
+<footer class="report-footer">
+  <div>megaMine v2.0 · Patient-guided literature evidence synthesis · APML, Ajou University Medical Center</div>
+  <div>Research use only · Not for direct clinical decision-making · OncoKB © MSK (oncokb.org)</div>
 </footer>
+
+</div>
 </body></html>"""
 
-    with open(out_path,"w",encoding="utf-8") as f:
-        f.write(html)
-    sz = Path(out_path).stat().st_size//1024
-    print(f"✅ HTML: {out_path} ({sz} KB)")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(HTML)
+    sz = Path(out_path).stat().st_size // 1024
+    print(f"✅ HTML report: {out_path} ({sz} KB)")
 
 
 def run_maf_pipeline(maf_path, cancer, out_dir, email, api_key,
