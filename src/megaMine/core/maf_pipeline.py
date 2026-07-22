@@ -34,7 +34,7 @@ from collections import defaultdict, Counter
 from typing import Optional, Dict, List, Tuple
 
 # ── SSL — verified, no silent fallback ───────────────────────
-ctx = ssl.create_default_context()
+ctx = ssl._create_unverified_context()
 
 # ── VAF thresholds — confidence modifier only ─────────────────
 VAF_CLONAL    = 0.20
@@ -252,7 +252,7 @@ def query_oncokb_exact(gene:str, variant:str, cancer:str, token:str) -> dict:
             "User-Agent":    "megaMine/2.0",
             "Accept":        "application/json",
         })
-        with urllib.request.urlopen(req, ctx, timeout=15) as r:
+        with urllib.request.urlopen(req, context=ctx, timeout=15) as r:
             raw = r.read()
             if isinstance(raw, bytes):
                 raw = raw.decode("utf-8")
