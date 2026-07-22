@@ -677,7 +677,7 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
     n_subclonal = int((summary["vaf_clonality"]=="Subclonal").sum())
     n_lowvaf    = int((summary["vaf_clonality"]=="LowVAF").sum())
     total_papers   = int(summary["total_papers"].sum())
-    total_verified = int(summary["verified_rows"].sum())
+    total_verified = int(summary["relation_verified_rows"].sum() if "relation_verified_rows" in summary.columns else 0)
 
     # ── Per-variant evidence cards ─────────────────────────────
     gene_cards = ""
@@ -697,7 +697,7 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
         grole   = r.get("gene_role","unknown")
         altcls  = r.get("alteration_class","unknown")
         papers  = r.get("total_papers",0)
-        verified= r.get("verified_rows",0)
+        verified= r.get("relation_verified_rows", r.get("verified_rows",0))
 
         # OncoKB status badge
         is_error = "unavailable" in ok_ml.lower() or "error" in ok_ml.lower()
@@ -924,7 +924,7 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
     <div class="mv" style="color:#1F78B4">{total_verified}</div>
     <div class="ml">Relation Verified</div></div>
   <div class="m" style="border-color:#27ae60">
-    <div class="mv" style="color:#27ae60">{{summary["same_cancer_verified_rows"].sum() if "same_cancer_verified_rows" in summary.columns else 0}}</div>
+    <div class="mv" style="color:#27ae60">{int(summary["same_cancer_verified_rows"].sum()) if "same_cancer_verified_rows" in summary.columns else 0}</div>
     <div class="ml">Same-Cancer</div></div>
 </div>
 
@@ -938,6 +938,11 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
     <span class="leg" style="background:#e74c3c">Resistance evidence</span>
   </div>
   {gene_cards}
+</div>
+
+<div class="sec">
+  <div class="st">🏥 ClinicalTrials.gov Linkage</div>
+  {{trials_section}}
 </div>
 
 <div class="sec">
@@ -1277,6 +1282,39 @@ def run_maf_pipeline(maf_path, cancer, out_dir, email, api_key,
               f"VAF={r['VAF']:.3f} OncoKB={r['oncokb_label']:<10} "
               f"[{r['oncokb_match_label']}] top={r['top_drug']}")
 
+    # ── Clinical trials linkage ──────────────────────────────
+    print("\n[Step] Linking to ClinicalTrials.gov...")
+    trials_df = pd.DataFrame()
+    try:
+        for mod in list(sys.modules.keys()):
+            if "megaMine" in mod: del sys.modules[mod]
+        from megaMine.modules.trials import run_trials_linkage
+        from megaMine.modules.contradiction import run_contradiction_detection
+        from megaMine.modules.temporal import run_temporal_analysis
+
+        if len(verified) > 0:
+            # Build minimal contradiction df for trials linkage
+            try:
+                _, trend_df  = run_temporal_analysis(combined)
+                contra_df    = run_contradiction_detection(combined,
+                                   profile_df=trend_df)
+            except Exception:
+                contra_df = pd.DataFrame()
+
+            trials_df = run_trials_linkage(
+                verified,
+                contradiction_df=contra_df,
+                dry_run=False,
+            )
+            n_trials = len(trials_df)
+            n_active = int((trials_df.get("highest_phase","") != "").sum()) if n_trials>0 else 0
+            print(f"  Linked {n_trials} drug-gene pairs | Active trials found: {n_active}")
+        else:
+            print("  No verified evidence for trial linkage")
+    except Exception as e:
+        print(f"  Trial linkage failed: {e}")
+        trials_df = pd.DataFrame()
+
     out_xlsx = out/f"{patient_id}_megaMine_evidence.xlsx"
     with pd.ExcelWriter(out_xlsx, engine="openpyxl") as xl:
         mutations.to_excel(xl,             sheet_name="Mutations",             index=False)
@@ -1287,11 +1325,19 @@ def run_maf_pipeline(maf_path, cancer, out_dir, email, api_key,
         combined.to_excel(xl,              sheet_name="All_Evidence",          index=False)
         verified.to_excel(xl,              sheet_name="Verified_Evidence",     index=False)
         pd.DataFrame(comutations).to_excel(xl, sheet_name="CoMutation_Hypotheses", index=False)
+        if len(trials_df)>0:
+            trials_df.to_excel(xl, sheet_name="ClinicalTrials", index=False)
+        if len(cross_cancer)>0:
+            cross_cancer.to_excel(xl, sheet_name="CrossCancer_Evidence", index=False)
         pd.DataFrame([{
-            "patient":    patient_id,"cancer":cancer,"vaf_min":vaf_min,
-            "years":years,"oncokb":bool(oncokb_token),
-            "n_variants": len(mutations),"n_rows":len(combined),
-            "n_verified": len(verified),"version":"megaMine_v2.0.0",
+            "patient":          patient_id,"cancer":cancer,"vaf_min":vaf_min,
+            "years":            years,"oncokb":bool(oncokb_token),
+            "n_variants":       len(mutations),"n_rows":len(combined),
+            "n_verified":       len(verified),
+            "n_cancer_matched": len(cancer_matched),
+            "n_cross_cancer":   len(cross_cancer),
+            "n_trial_pairs":    len(trials_df),
+            "version":          "megaMine_v2.0.0",
         }]).to_excel(xl, sheet_name="RunInfo", index=False)
     print(f"✅ Excel: {out_xlsx}")
 
