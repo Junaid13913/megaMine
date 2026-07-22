@@ -690,7 +690,16 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
                 f"<td><span style='color:{pc};font-weight:600'>{phase}</span></td>"
                 f"<td>{n_t}</td><td style='color:#e74c3c'>{n_f}</td></tr>"
             )
-        trials_section = (
+        if not trials_rows:
+            trials_section = (
+                "<div style='background:#fff;padding:12px 16px;border-radius:8px;"
+                "color:#64748b;font-size:.78rem;box-shadow:0 2px 6px rgba(0,0,0,.05)'>"
+                "ClinicalTrials.gov was queried but no trials with confirmed phase "
+                "data were identified for the retrieved drug-gene pairs."
+                "</div>"
+            )
+        else:
+            trials_section = (
             "<div style='overflow-x:auto'>"
             "<table style='width:100%;border-collapse:collapse;font-size:.78rem;"
             "background:#fff;border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.05);overflow:hidden'>"
@@ -706,9 +715,12 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
         )
     else:
         trials_section = (
-            "<p style='color:#94a3b8;font-size:.82rem'>"
-            "No clinical trial data linked — "
-            "requires verified same-cancer evidence.</p>"
+            "<div style='background:#fff;padding:12px 16px;border-radius:8px;"
+            "color:#64748b;font-size:.78rem;box-shadow:0 2px 6px rgba(0,0,0,.05)'>"
+            "No complete ClinicalTrials.gov linkage was identified for the "
+            "relation-verified evidence in this report. Trial linkage requires "
+            "same-cancer verified gene–drug relations."
+            "</div>"
         )
 
     # Metrics
@@ -864,7 +876,9 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
                    (("gain" in ok_eff.lower() and altcls=="missense") or
                     ("loss" in ok_eff.lower() and altcls=="truncating"))
                 else
-                f" ⚠️ Interpretation note: MAF class={altcls}, OncoKB effect={ok_eff} — exact allele not confirmed; OncoKB functional annotation applies to broader variant class, not this specific allele."
+                f" ⚠️ Interpretation note: MAF class={altcls}, OncoKB effect={ok_eff} — "
+                f"{"OncoKB annotation is gene-level context only" if gene_match and not variant_match else "OncoKB functional annotation applies to broader variant/class"} "
+                f"and is not confirmed for this specific allele."
                 if not is_error and not allele_match and ok_eff not in ("Unknown","") and altcls in ("truncating","missense")
                 else "")}
               {" FGFR2 truncating variants (loss-of-function in an oncogene) may not respond like activating mutations or fusions — applicability not established." if gene=="FGFR2" and altcls=="truncating" else ""}
@@ -995,7 +1009,7 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
   class, and (3) gene-level. Retrieved records were normalized, deduplicated,
   and verified by the megaMine offline LLM verifier. Evidence is graded by
   specificity weight (exact=1.00, class=0.75, gene=0.45) and cancer-context
-  match. OncoKB was queried for exact-allele annotation. Results are
+  match. OncoKB was queried using the patient protein alteration; annotations were classified as exact-allele, broader variant/class, gene-only, or no match. Results are
   categorized as direct, related, indirect, or cross-cancer evidence.
   VAF is used as a clonality confidence modifier, not a primary actionability tier.
 </div>
@@ -1023,7 +1037,7 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
     <div class="mv" style="color:#f39c12">{n_subclonal}</div><div class="ml">Subclonal</div></div>
   <div class="m" style="border-color:#e74c3c">
     <div class="mv" style="color:#e74c3c">{n_lowvaf}</div><div class="ml">Low VAF</div></div>
-  <div class="m"><div class="mv">{total_papers}</div><div class="ml">Papers</div></div>
+  <div class="m"><div class="mv">{total_papers}</div><div class="ml">Candidate Records</div></div>
   <div class="m" style="border-color:#1F78B4">
     <div class="mv" style="color:#1F78B4">{total_verified}</div>
     <div class="ml">Relation Verified</div></div>
