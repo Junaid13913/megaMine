@@ -693,7 +693,7 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
         var_rows += (
             f"<tr>"
             f"<td><strong>{r['gene']}</strong></td>"
-            f"<td><code style='font-size:11px'>{r.get('variant','')}</code></td>"
+            f"<td><code style='font-size:11px'>{r.get('variant','') if str(r.get('variant','')) not in ('nan','None','') else '—'}</code></td>"
             f"<td>{r.get('VAF',0):.3f}</td>"
             f"<td style='color:{clon_c};font-weight:600'>{clon}</td>"
             f"<td>{r.get('alteration_class','')}</td>"
@@ -830,9 +830,6 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
                 f"<td style='font-size:10px;color:#6b7280'>{score:.3f}</td>"
                 f"</tr>"
             )
-        if not ev_rows:
-            ev_rows = '<tr><td colspan="9" style="padding:10px;color:#6b7280;text-align:center">No verified evidence</td></tr>'
-
         ev_status = ("Same-cancer verified"
                      if int(r.get("same_cancer_verified_rows",0))>0
                      else "Cross-cancer only"
@@ -849,7 +846,7 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
 <article class="variant-section">
   <div class="variant-header">
     <div>
-      <h3>{gene} <span>{variant}</span></h3>
+      <h3>{gene}{(' <span>' + str(variant) + '</span>') if str(variant) not in ('nan','None','') else ''}</h3>
       <div class="variant-meta-line">VAF {vaf:.3f} · {clon} · {grole} · {altcls}</div>
     </div>
     <div class="annotation-status {ann_cls}">{ann_txt}</div>
@@ -870,22 +867,28 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
       <div>{drugs_row}</div>
     </div>
     {conflict_row}
-    <div class="interpretation-row interpretation-warning">
-      <div class="interpretation-label">Applicability</div>
-      <div>{app_note}</div>
-    </div>
+    {(
+    "<div class=\'interpretation-row interpretation-warning\'>"
+    "<div class=\'interpretation-label\'>Applicability</div>"
+    f"<div>{app_note}</div>"
+    "</div>"
+  ) if app_note and app_note != "No specific applicability notes." else ""}
   </div>
-  <div class="table-wrap" style="margin:0">
-    <table class="clinical-table">
-      <thead><tr>
-        <th>Drug</th><th>Direction</th><th>Cancer context</th>
-        <th>Evidence class</th><th>Specificity</th><th>Study design</th>
-        <th>PMID</th><th>Evidence sentence</th><th>Priority score*</th>
-      </tr></thead>
-      <tbody>{ev_rows}</tbody>
-    </table>
-    <p class="table-footnote">*Priority score ranks retrieved literature evidence and does not estimate treatment response probability.</p>
-  </div>
+  {(
+    "<div class=\'table-wrap\' style=\'margin:0\'>"
+    "<table class=\'clinical-table\'>"
+    "<thead><tr>"
+    "<th>Drug</th><th>Direction</th><th>Cancer context</th>"
+    "<th>Evidence class</th><th>Specificity</th><th>Study design</th>"
+    "<th>PMID</th><th>Evidence sentence</th><th>Priority score*</th>"
+    "</tr></thead>"
+    f"<tbody>{ev_rows}</tbody>"
+    "</table>"
+    "<p class=\'table-footnote\'>*Priority score ranks retrieved literature evidence and does not estimate treatment response probability.</p>"
+    "</div>"
+  ) if ev_rows else
+    "<div class=\'empty-state\' style=\'margin:0\'>No verified evidence found for this variant.</div>"
+  }
 </article>"""
 
     # Trials
@@ -1096,8 +1099,7 @@ a{color:inherit;text-decoration:none}
     Records normalized, deduplicated, and verified by offline LLM.
     OncoKB queried per patient protein alteration; annotations classified as
     exact-allele, broader variant/class, gene-only, or no match.
-    VAF is a clonality confidence modifier, not a primary actionability tier.
-    Patient drug ranking uses same-cancer verified evidence only.
+    VAF is a clonality confidence modifier, not a primary actionability tier. Patient-level drug ranking is derived from same-cancer verified evidence only; cross-cancer evidence is reported separately and is not included in the ranking.
   </div>
 </section>
 
