@@ -697,7 +697,7 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
             f"<td>{r.get('VAF',0):.3f}</td>"
             f"<td style='color:{clon_c};font-weight:600'>{clon}</td>"
             f"<td>{r.get('alteration_class','')}</td>"
-            f"<td style='font-size:10.5px'>{r.get('oncokb_match_label','') or '—'}</td>"
+            f"<td style='font-size:10.5px'>{r.get('oncokb_annotation_status', r.get('oncokb_match_label','')) or '—' or '—'}</td>"
             f"<td style='text-align:center'>{r.get('total_papers',0)}</td>"
             f"<td style='text-align:center'>{r.get('relation_verified_rows',r.get('verified_rows',0))}</td>"
             f"</tr>"
@@ -758,7 +758,7 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
                        if gene_m and not variant_m
                        else "broader variant/class")
                 conflict_note = (
-                    f"Interpretation note: MAF class is {altcls}, "
+                    f"MAF class is {altcls}, "
                     f"while OncoKB effect is {ok_eff}. "
                     f"OncoKB annotation is {who} and is not confirmed for this specific allele."
                 )
@@ -809,7 +809,8 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
             ev_class = dr.get("evidence_class",
                               classify_evidence(tier, cancer_m, is_res))
             sent     = str(dr.get("summary_sentence",""))[:280]
-            study    = str(dr.get("study_design","") or "")
+            study    = dr.get("study_design", dr.get("study_type","")) or ""
+            study    = "—" if not study or str(study).strip() in ("nan","None","") else str(study)
             ec_css   = {"Direct evidence":"evidence-direct",
                         "Related evidence":"evidence-related",
                         "Indirect evidence":"evidence-indirect",
@@ -1468,6 +1469,7 @@ def run_maf_pipeline(maf_path, cancer, out_dir, email, api_key,
             "oncokb_oncogenicity":    ok.get("oncogenicity","Unknown"),
             "oncokb_mutation_effect": ok.get("mutation_effect","Unknown"),
             "oncokb_match_label":     ok.get("match_label",""),
+            "oncokb_annotation_status": ("Exact allele recognized" if ok.get("allele_exist",False) else "Variant/class recognized; exact allele not confirmed" if ok.get("variant_exist",False) else "Gene recognized only — no variant-level annotation" if ok.get("gene_exist",False) else "No OncoKB match"),
             "oncokb_allele_exist":    ok.get("allele_exist", False),
             "oncokb_variant_exist":   ok.get("variant_exist", False),
             "oncokb_gene_exist":      ok.get("gene_exist", False),
