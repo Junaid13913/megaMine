@@ -159,28 +159,28 @@ def _table_html(df, max_rows=300, caption=""):
 </div>"""
 
 
-def _metric_card(label, value, icon="📊", color="#1e2d3d"):
+def _metric_card(label, value, icon="", color="#17324d"):
     return f"""
 <div class="metric-card">
-  <div class="metric-icon">{icon}</div>
   <div class="metric-value" style="color:{color}">{_h(str(value))}</div>
   <div class="metric-label">{_h(label)}</div>
 </div>"""
 
 
 def _qc_badge(level, msg):
-    colors = {"ok": "#2ea87e", "warn": "#e8a020", "fail": "#f05a28"}
-    icons  = {"ok": "✅", "warn": "⚠️", "fail": "❌"}
-    c = colors.get(level, "#7a8799")
-    i = icons.get(level, "•")
-    return f'<div class="qc-badge" style="border-left:4px solid {c}">{i} {_h(msg)}</div>'
+    colors = {"ok":"#2f6b4f","warn":"#8a5a16","fail":"#9b3a3a"}
+    c = colors.get(level, "#6b7280")
+    return f'<div class="qc-badge" style="border-left-color:{c}">{_h(msg)}</div>'
 
 
 def _section(title, content, section_id=""):
     sid = section_id or title.lower().replace(" ", "-")
     return f"""
 <section id="{_h(sid)}" class="report-section">
-  <h2 class="section-title">{_h(title)}</h2>
+  <div style="display:flex;align-items:center;justify-content:space-between;
+       padding-bottom:8px;margin-bottom:16px;border-bottom:2px solid #17324d">
+    <h2 class="section-title" style="border:none;padding:0;margin:0">{_h(title)}</h2>
+  </div>
   {content}
 </section>"""
 
@@ -197,100 +197,198 @@ def _subsection(title, content, caption=""):
 
 CSS = """
 :root {
-  --navy:#1e2d3d; --blue:#5b4fcf; --teal:#00a8a8;
-  --green:#2ea87e; --yellow:#e8a020; --red:#f05a28;
-  --gray:#6b7280; --light:#f3f4f6; --white:#ffffff;
-  --shadow:0 2px 8px rgba(0,0,0,0.08); --radius:10px;
-  --font:'Inter',system-ui,sans-serif;
+  --navy-900:#17324d; --navy-700:#28506f;
+  --slate-900:#1f2933; --slate-700:#4b5563; --slate-500:#6b7280;
+  --slate-300:#d1d5db; --slate-200:#e5e7eb; --slate-100:#f3f4f6;
+  --slate-050:#f8fafc; --white:#ffffff;
+  --green-700:#2f6b4f; --green-100:#e8f3ed;
+  --amber-700:#8a5a16; --amber-100:#fbf3df;
+  --red-700:#9b3a3a;   --red-100:#f8e8e8;
+  --blue-700:#315f8c;  --blue-100:#eaf1f8;
+  --teal:#00a8a8;
+  --font:Inter,"Source Sans 3","Segoe UI",Helvetica,Arial,sans-serif;
 }
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:var(--font);background:#f0f4f8;color:#1e293b;display:flex;min-height:100vh;}
-#sidebar{width:240px;min-height:100vh;background:var(--navy);color:white;position:fixed;top:0;left:0;overflow-y:auto;z-index:100;padding-bottom:40px;}
-#sidebar .logo{padding:24px 20px 16px;font-size:1.1rem;font-weight:700;border-bottom:1px solid rgba(255,255,255,0.12);}
-#sidebar .logo span{color:#93c5fd;}
-#sidebar nav{padding:12px 0;}
-#sidebar nav a{display:block;padding:9px 20px;color:rgba(255,255,255,0.75);text-decoration:none;font-size:0.85rem;transition:all 0.15s;border-left:3px solid transparent;}
-#sidebar nav a:hover,#sidebar nav a.active{color:white;background:rgba(255,255,255,0.08);border-left-color:#93c5fd;}
-#main{margin-left:240px;flex:1;padding:0 0 60px;min-width:0;overflow-x:hidden;max-width:calc(100vw - 240px);}
-.report-header{background:linear-gradient(135deg,var(--navy) 0%,#2563eb 100%);color:white;padding:36px 40px;}
-.report-header h1{font-size:1.8rem;font-weight:800;margin-bottom:8px;}
-.report-header .meta{font-size:0.85rem;opacity:0.8;display:flex;gap:24px;flex-wrap:wrap;margin-top:12px;}
-.report-header .disclaimer{margin-top:14px;padding:10px 16px;background:rgba(255,255,255,0.15);border-radius:8px;font-size:0.82rem;border-left:4px solid #fbbf24;line-height:1.5;}
-.report-section{padding:32px 40px;border-bottom:1px solid #e2e8f0;max-width:100%;overflow-x:hidden;}
-.metric-grid{max-width:100%;}
-.subsection{max-width:100%;overflow-x:auto;}
-.section-title{font-size:1.2rem;font-weight:700;color:var(--navy);margin-bottom:20px;padding-bottom:10px;border-bottom:2px solid #e2e8f0;}
-.subsection{background:white;border-radius:var(--radius);padding:20px 24px;margin-bottom:20px;box-shadow:var(--shadow);}
-.subsection-title{font-size:0.95rem;font-weight:600;color:var(--navy);margin-bottom:14px;}
-.fig-caption{font-size:0.78rem;color:var(--gray);margin-top:10px;font-style:italic;}
-.metric-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:20px;max-width:100%;width:100%;}
-.metric-card{background:white;border-radius:var(--radius);padding:14px 10px;box-shadow:var(--shadow);text-align:center;border-top:3px solid var(--blue);min-width:0;overflow:hidden;}
-.metric-icon{font-size:1.2rem;margin-bottom:4px;}
-.metric-value{font-size:1.35rem;font-weight:800;color:var(--navy);line-height:1;}
-.metric-label{font-size:0.62rem;color:var(--gray);margin-top:5px;text-transform:uppercase;letter-spacing:0.4px;white-space:normal;word-break:break-word;}
-.qc-grid{display:flex;flex-direction:column;gap:8px;}
-.qc-badge{background:white;border-radius:6px;padding:10px 14px;font-size:0.83rem;box-shadow:var(--shadow);}
-.table-wrap{overflow-x:auto;}
-.data-table{width:100%;border-collapse:collapse;font-size:0.78rem;}
-.data-table th{background:var(--navy);color:white;padding:6px 10px;text-align:left;font-weight:600;white-space:normal;word-break:break-word;font-size:0.75rem;}
-.data-table td{padding:5px 10px;border-bottom:1px solid #e2e8f0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.75rem;}
-.data-table td:hover{white-space:normal;word-break:break-word;overflow:visible;position:relative;z-index:10;background:#fffbeb;box-shadow:0 2px 8px rgba(0,0,0,0.15);}
-.data-table tr:nth-child(even) td{background:#f8fafc;}
-.data-table tr:hover td{background:#f0f9ff;}
-.table-wrap{overflow-x:auto;max-width:100%;}
-.table-note{font-size:0.72rem;color:var(--gray);margin-bottom:6px;font-style:italic;}
-.skip-note{color:var(--gray);font-size:0.8rem;font-style:italic;padding:12px;background:var(--light);border-radius:6px;}
-.plot-row{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:4px;}
-.plot-row>.subsection{margin-bottom:0;}
-@media(max-width:1000px){.plot-row{grid-template-columns:1fr;}}
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
-@media(max-width:900px){#sidebar{display:none;}#main{margin-left:0;}.two-col{grid-template-columns:1fr;}}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--font);background:#eef1f4;color:var(--slate-900);
+     display:flex;min-height:100vh;font-size:13px;line-height:1.55}
+a{color:var(--navy-700)}
+
+/* Sidebar */
+#sidebar{width:220px;min-height:100vh;background:var(--navy-900);
+         color:#fff;position:fixed;top:0;left:0;overflow-y:auto;
+         z-index:100;padding-bottom:40px;border-right:1px solid rgba(255,255,255,0.08)}
+#sidebar .logo{padding:22px 18px 14px;font-size:1rem;font-weight:700;
+               letter-spacing:-.01em;border-bottom:1px solid rgba(255,255,255,0.1)}
+#sidebar .logo span{color:#93c5fd}
+#sidebar nav{padding:10px 0}
+#sidebar nav a{display:block;padding:8px 18px;color:rgba(255,255,255,0.7);
+               text-decoration:none;font-size:0.8rem;
+               border-left:3px solid transparent;transition:all 0.12s}
+#sidebar nav a:hover{color:#fff;background:rgba(255,255,255,0.06);
+                     border-left-color:#93c5fd}
+#sidebar nav a.active{color:#fff;background:rgba(255,255,255,0.1);
+                      border-left-color:#93c5fd}
+#sidebar .nav-section{padding:14px 18px 4px;font-size:9px;font-weight:700;
+                       text-transform:uppercase;letter-spacing:.1em;
+                       color:rgba(255,255,255,0.35)}
+
+/* Main content */
+#main{margin-left:220px;flex:1;min-width:0}
+
+/* Header */
+.report-header{background:var(--white);border-top:7px solid var(--navy-900);
+               border-bottom:1px solid var(--slate-200);
+               padding:28px 34px 24px}
+.report-header-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;
+                    gap:28px;margin-bottom:18px}
+.report-eyebrow{font-size:10px;font-weight:700;letter-spacing:.12em;
+                text-transform:uppercase;color:var(--navy-700);margin-bottom:6px}
+.report-title{font-size:22px;font-weight:700;letter-spacing:-.02em;
+              color:var(--navy-900);line-height:1.25}
+.report-subtitle{margin-top:6px;font-size:12px;color:var(--slate-500)}
+.report-meta{display:grid;grid-template-columns:1fr 1fr;gap:11px 16px;font-size:11.5px}
+.report-meta div{color:var(--slate-900);font-weight:600}
+.report-meta span{display:block;margin-bottom:2px;color:var(--slate-500);
+                  font-size:9.5px;font-weight:700;text-transform:uppercase;
+                  letter-spacing:.04em}
+.disclaimer{margin-top:0;padding:11px 14px;border-left:4px solid var(--amber-700);
+            background:var(--amber-100);font-size:11.5px;color:#5f4a27;line-height:1.5}
+.disclaimer strong{color:var(--amber-700)}
+
+/* Sections */
+.report-section{padding:24px 34px;border-bottom:1px solid var(--slate-200);
+                background:var(--white)}
+.report-section:nth-child(even){background:var(--slate-050)}
+.section-title{font-size:15px;font-weight:700;color:var(--navy-900);
+               padding-bottom:8px;margin-bottom:16px;
+               border-bottom:2px solid var(--navy-900)}
+.subsection{margin-bottom:22px}
+.subsection-title{font-size:12.5px;font-weight:700;color:var(--navy-700);
+                  margin-bottom:10px;padding-bottom:5px;
+                  border-bottom:1px solid var(--slate-200)}
+.fig-caption{margin-top:6px;font-size:10.5px;color:var(--slate-500);
+             font-style:italic;line-height:1.4}
+
+/* Metric cards */
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+              gap:1px;border:1px solid var(--slate-200);margin-bottom:20px;
+              background:var(--slate-200)}
+.metric-card{background:var(--white);padding:14px 16px;text-align:left}
+.metric-value{font-size:22px;font-weight:700;color:var(--navy-900);
+              line-height:1;margin-bottom:5px}
+.metric-label{font-size:9.5px;font-weight:700;text-transform:uppercase;
+              letter-spacing:.05em;color:var(--slate-500)}
+.metric-icon{display:none}
+
+/* QC badges */
+.qc-badge{padding:7px 11px;margin-bottom:6px;border-left:4px solid var(--slate-300);
+          background:var(--slate-050);font-size:11.5px;color:var(--slate-700)}
+
+/* Plot row */
+.plot-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+/* Tables */
+.table-wrap{overflow-x:auto;border:1px solid var(--slate-200);margin-bottom:16px}
+.data-table{width:100%;border-collapse:collapse;font-size:11.5px}
+.data-table th{padding:9px 10px;text-align:left;background:var(--navy-900);
+               color:#fff;font-weight:600;font-size:10px;
+               text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+.data-table td{padding:8px 10px;border-bottom:1px solid var(--slate-200);
+               vertical-align:top}
+.data-table tbody tr:nth-child(even){background:var(--slate-050)}
+.data-table tbody tr:last-child td{border-bottom:0}
+.data-table tbody tr:hover td{background:var(--blue-100)}
+table caption{font-size:10.5px;color:var(--slate-500);padding:6px 0;
+              text-align:left;font-style:italic}
+
+/* Evidence labels */
+.badge{display:inline-block;padding:2px 6px;border-radius:2px;
+       font-size:9px;font-weight:700;line-height:1.3}
+.badge-green{color:var(--green-700);background:var(--green-100)}
+.badge-blue{color:var(--blue-700);background:var(--blue-100)}
+.badge-amber{color:var(--amber-700);background:var(--amber-100)}
+.badge-red{color:var(--red-700);background:var(--red-100)}
+.badge-gray{color:var(--slate-700);background:var(--slate-100)}
+
+/* Footer */
+.report-footer{padding:16px 34px;border-top:1px solid var(--slate-200);
+               background:var(--white);display:flex;justify-content:space-between;
+               color:var(--slate-500);font-size:10.5px;gap:20px}
+
+/* Print */
+@media print{
+  body{background:#fff}
+  #sidebar{display:none}
+  #main{margin-left:0}
+  .report-section{border:0;padding:14px 0}
+  .data-table th{background:#e5e7eb!important;color:#111!important;
+                 border:1px solid #9ca3af}
+  .data-table td{border:1px solid #d1d5db}
+}
+@media(max-width:900px){
+  #sidebar{display:none}
+  #main{margin-left:0}
+  .report-header-grid{grid-template-columns:1fr}
+  .plot-row{grid-template-columns:1fr}
+  .metrics-grid{grid-template-columns:repeat(3,1fr)}
+}
 """
+
 
 
 def _sidebar():
     items = [
-        ("summary",       "📊 Executive Summary"),
-        ("normalization", "🏷️ Normalization"),
-        ("resistance",    "⚡ Resistance"),
-        ("evidence",      "✅ Evidence"),
-        ("matrix",        "🔲 Gene-Drug Matrix"),
-        ("temporal",      "📈 Temporal"),
-        ("contradictions","⚠️ Contradictions"),
-        ("trials",        "🏥 ClinicalTrials"),
-        ("graph",         "🕸️ Knowledge Graph"),
-        ("tables",        "📋 Data Tables"),
+        ("summary",        "Executive Summary"),
+        ("normalization",  "Normalization"),
+        ("resistance",     "Resistance"),
+        ("evidence",       "Evidence"),
+        ("matrix",         "Gene-Drug Matrix"),
+        ("temporal",       "Temporal Trends"),
+        ("contradictions", "Contradictions"),
+        ("trials",         "ClinicalTrials.gov"),
+        ("graph",          "Knowledge Graph"),
+        ("tables",         "Data Tables"),
     ]
     links = "".join(f'<a href="#{sid}">{_h(label)}</a>' for sid, label in items)
     return f"""<div id="sidebar">
-  <div class="logo">mega<span>Mine</span> v2.0</div>
+  <div class="logo">mega<span>Mine</span></div>
+  <div class="nav-section">Navigation</div>
   <nav>{links}</nav>
 </div>"""
 
 
 def _header(title, run_info):
-    query = version = generated = n_rows = ""
+    query = version = generated = n_rows = n_ver = n_pmids = ""
     if run_info is not None and len(run_info) > 0:
-        ri = run_info.iloc[0]
+        ri        = run_info.iloc[0]
         query     = str(ri.get("query", ""))
         version   = str(ri.get("version", "megaMine v2.0"))
-        generated = str(ri.get("generated_at",
-                        datetime.now().isoformat(timespec="seconds")))
+        generated = datetime.now().strftime("%Y-%m-%d %H:%M")
         n_rows    = str(ri.get("n_rows_all", ri.get("n_rows", "")))
+        n_ver     = str(ri.get("n_rows_verified", ""))
+        n_pmids   = str(ri.get("n_pmids", ""))
     return f"""<div class="report-header">
-  <h1>{_h(title)}</h1>
-  <div class="meta">
-    <span>🔍 {_h(query)}</span>
-    <span>⚙️ {_h(version)}</span>
-    <span>🕐 {_h(generated)}</span>
-    <span>📄 {_h(n_rows)} rows</span>
+  <div class="report-header-grid">
+    <div>
+      <div class="report-eyebrow">Literature Evidence Synthesis Report</div>
+      <h1 class="report-title">{_h(title)}</h1>
+      <div class="report-subtitle">Generated by {_h(version)} · APML, Ajou University</div>
+    </div>
+    <div class="report-meta">
+      <div><span>Query</span>{_h(query[:60])}{'...' if len(query)>60 else ''}</div>
+      <div><span>Generated</span>{_h(generated)}</div>
+      <div><span>Total rows</span>{_h(n_rows)}</div>
+      <div><span>Verified rows</span>{_h(n_ver)}</div>
+      <div><span>Unique PMIDs</span>{_h(n_pmids)}</div>
+      <div><span>Institution</span>Ajou University</div>
+    </div>
   </div>
   <div class="disclaimer">
-    ⚠️ <strong>Literature-derived evidence only.</strong>
-    This report summarises published scientific literature extracted by megaMine v2.0.
-    It is <strong>not a clinical treatment recommendation</strong> and should not be
-    used to guide patient care without independent clinical validation.
-    All relationships are literature-derived and require expert review.
+    <strong>Important:</strong>
+    This report presents literature-derived evidence extracted by megaMine v2.0.
+    It supports expert review and does <strong>not constitute a clinical
+    treatment recommendation.</strong>
+    All findings require independent validation by a qualified expert.
   </div>
 </div>"""
 
@@ -324,6 +422,10 @@ window.addEventListener('scroll', () => {{
   links.forEach(l => {{ l.classList.toggle('active', l.getAttribute('href') === '#' + current); }});
 }});
 </script>
+<footer class="report-footer">
+  <div>megaMine v2.0 · Literature evidence synthesis · APML, Ajou University</div>
+  <div>Research use only · Not for direct clinical decision-making</div>
+</footer>
 </body>
 </html>"""
 
