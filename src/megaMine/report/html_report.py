@@ -410,7 +410,7 @@ def _header(title, run_info):
     <div class="report-meta">
       <div><span>Total rows</span>{_h(n_rows)}</div>
       <div><span>Verified rows</span>{_h(n_ver)}</div>
-      <div><span>Unique PMIDs</span>{_h(n_pmids)}</div>
+      <div><span>Total PMIDs (extracted)</span>{_h(n_pmids)}</div>
       <div><span>Query</span>{_h(query[:60])}{'...' if len(query)>60 else ''}</div>
     </div>
   </div>
@@ -515,7 +515,7 @@ def _build_summary(rows_all, rows_ver, trend_ver, contra_ver,
     n_strict = int((rows_all["canonical_cancer_type"].fillna("")
                     .str.contains("Non-Small Cell", na=False)).sum()) if (rows_all is not None and "canonical_cancer_type" in rows_all.columns) else 0
     interp = f"""
-<div class="subsection" style="border-left:4px solid #2563eb;background:#eff6ff;max-width:100%;">
+<div class="subsection" style="border-left:3px solid #17324d;background:#f8fafc;max-width:100%;">
   <h3 class="subsection-title" id="interp-summary">Interpretation Summary</h3>
   <p style="font-size:0.82rem;line-height:1.65;color:#1e293b;max-width:100%;">
   This report presents literature-derived evidence for the query:
