@@ -405,7 +405,7 @@ def _header(title, run_info):
     <div>
       <div class="report-eyebrow">Literature Evidence Synthesis Report</div>
       <h1 class="report-title">megaMine v2.0 &mdash; Literature Evidence Report</h1>
-      <div class="report-subtitle">APML &middot; Ajou University, Department of Biomedical Sciences, Department of Biomedical Sciences &middot; {_h(generated)}</div>
+      <div class="report-subtitle">APML &middot; Ajou University, Department of Biomedical Sciences &middot; {_h(generated)}</div>
     </div>
     <div class="report-meta">
       <div><span>Total rows</span>{_h(n_rows)}</div>
