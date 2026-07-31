@@ -951,7 +951,7 @@ def build_html_report(summary, combined, ranked, patient_drug_ranking,
         f"<tr><td>{s}</td><td>{n}</td><td>{d}</td></tr>"
         for s,n,d in [
             ("1","Gene normalization","Gene normalized against HGNC approved symbol list (44,597 genes)"),
-            ("2","Drug normalization","Drug normalized against curated oncology whitelist (254 agents)"),
+            ("2","Drug normalization","Drug normalized via ChEMBL vocabulary (Zdrazil et al. 2024): 2,305 drugs + 20,823 brand name/synonym mappings"),
             ("3","Relation check","Query gene and drug required in evidence relation; gene-absent rows rejected"),
             ("4","Negation/speculation","Negated or speculative statements excluded by offline LLM verifier"),
             ("5","Evidence specificity","Graded: exact alteration (1.00), alteration class (0.75), gene-level (0.45)"),

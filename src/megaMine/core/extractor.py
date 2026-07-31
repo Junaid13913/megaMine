@@ -423,55 +423,73 @@ DEFAULT_ONCO_DRUGS = {
 def load_drug_whitelist(path: Optional[str]) -> Dict[str,str]:
     """
     Load drug whitelist. Priority:
-    1. Explicit path if provided
-    2. Auto-detect drug_whitelist_v2.json next to extractor.py
+    1. ChEMBL-derived vocabulary (2,305 drugs + 20,823 synonyms)
+       Built from Zdrazil et al. 2024 (ChEMBL database)
+       via drug indications, mechanisms, ATC-L, approval status
+    2. Explicit path if provided (overrides ChEMBL)
     3. Fall back to DEFAULT_ONCO_DRUGS (64 drugs)
+
+    Returns dict: {lowercase_name/synonym → generic_name}
+    Handles brand names (Tarceva→erlotinib),
+    abbreviations (OSI-774→erlotinib), synonyms.
     """
     import json as _json
 
     out = {}
 
-    # Try explicit path
+    # ── Priority 1: ChEMBL vocabulary ────────────────────────
+    try:
+        from megaMine.utils.drug_whitelist import (
+            DRUG_WHITELIST, DRUG_EXPANSION
+        )
+        # Add all generic names
+        for name in DRUG_WHITELIST:
+            if name:
+                out[name.lower()] = name
+        # Add all synonyms/brand names → generic
+        for synonym, generic in DRUG_EXPANSION.items():
+            if synonym and generic:
+                out[synonym.lower()] = generic
+        print(f"   ChEMBL drug vocabulary loaded: "
+              f"{len(DRUG_WHITELIST):,} drugs + "
+              f"{len(DRUG_EXPANSION):,} synonyms "
+              f"(Zdrazil et al. 2024)")
+    except Exception as e:
+        print(f"   ChEMBL vocabulary not available: {e}")
+
+    # ── Priority 2: Explicit path (adds to ChEMBL) ────────────
     if path and os.path.exists(path):
         if path.lower().endswith(".csv"):
             import csv as _csv
             with open(path, newline="", encoding="utf-8") as fh:
                 for row in _csv.DictReader(fh):
-                    name = (row.get("name") or row.get("Name") or "").strip()
+                    name = (row.get("name") or
+                            row.get("Name") or "").strip()
                     if name: out[name.lower()] = name
         elif path.lower().endswith(".json"):
             with open(path, "r", encoding="utf-8") as fh:
                 data = _json.load(fh)
-                drugs = data.get("drugs", data if isinstance(data, list) else [])
+                drugs = data.get("drugs",
+                         data if isinstance(data, list) else [])
                 for n in drugs:
                     if n: out[str(n).lower()] = str(n)
-                # Add synonyms
-                for brand, generic in data.get("synonyms", {}).items():
+                for brand, generic in data.get(
+                        "synonyms", {}).items():
                     if brand: out[brand.lower()] = generic
         else:
             with open(path, "r", encoding="utf-8") as fh:
                 for line in fh:
                     name = line.strip()
                     if name: out[name.lower()] = name
+        print(f"   Additional whitelist from {path}: "
+              f"{len(out):,} total")
 
-    # Auto-detect v2 whitelist alongside this file
+    # ── Priority 3: Final fallback ────────────────────────────
     if not out:
-        v2_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "..", "data", "drug_whitelist_v2.json"
-        )
-        v2_path = os.path.normpath(v2_path)
-        if os.path.exists(v2_path):
-            try:
-                with open(v2_path, "r", encoding="utf-8") as fh:
-                    data = _json.load(fh)
-                    for n in data.get("drugs", []):
-                        if n: out[str(n).lower()] = str(n)
-                    for brand, generic in data.get("synonyms", {}).items():
-                        if brand: out[brand.lower()] = generic
-                print(f"   📦 Auto-loaded drug_whitelist_v2.json ({len(out)} drugs)")
-            except Exception as e:
-                print(f"   ⚠️  Could not load v2 whitelist: {e}")
+        for n in DEFAULT_ONCO_DRUGS:
+            out[n.lower()] = n
+        print(f"   Using DEFAULT_ONCO_DRUGS fallback "
+              f"({len(out)} drugs)")
 
     # Final fallback
     if not out:
