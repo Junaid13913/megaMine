@@ -392,7 +392,9 @@ def evaluate(
     pred_df["relation_pred"] = np.where(
         (pred_df.get("biomarker", pd.Series()).astype(str).str.strip() != "") &
         (pred_df.get("drug_primary", pd.Series()).astype(str).str.strip() != "") &
-        (pred_df.get("cancer_type", pd.Series()).astype(str).str.strip() != "") &
+        (pred_df.get("canonical_cancer_type",
+                         pred_df.get("cancer_type", pd.Series())
+                    ).astype(str).str.strip() != "") &
         (~pred_df.get("evidence_type", pd.Series())
          .astype(str).str.lower().isin(["background", ""])),
         "yes", "no"
@@ -581,7 +583,7 @@ def evaluate(
     # resistance_observed_gold unique to gold side — no suffix
     # resistance_observed unique to pred side — no suffix
     res_gold = _get_col(merged, ["resistance_observed_gold"])
-    res_pred = _get_col(merged, ["resistance_observed"])
+    res_pred = _get_col(merged, ["resistance_observed", "resistance_evidence"])
     res_metrics = binary_f1(res_gold, res_pred, positive_label="yes")
     results.append({
         "metric":    "resistance_detection",
