@@ -1,0 +1,221 @@
+{
+  "tarceva": {
+    "query": "Tarceva",
+    "generic_name": "erlotinib hydrochloride",
+    "synonyms": [
+      "erlotinib hydrochloride",
+      "cp-358774-01",
+      "osi-774",
+      "tarceva",
+      "erlotinib hcl",
+      "cp-358,774-01",
+      "cp-358"
+    ],
+    "brand_names": [
+      "erlotinib hydrochloride",
+      "tarceva"
+    ],
+    "chembl_id": "CHEMBL1079742",
+    "found": true
+  },
+  "osi-774": {
+    "query": "OSI-774",
+    "generic_name": "OSI-774",
+    "synonyms": [],
+    "brand_names": [],
+    "chembl_id": "CHEMBL5910569",
+    "found": true
+  },
+  "iressa": {
+    "query": "Iressa",
+    "generic_name": "gefitinib",
+    "synonyms": [
+      "zd-1839",
+      "zd1839",
+      "nsc-759856",
+      "gefitinib mylan",
+      "iressa",
+      "gefitinib"
+    ],
+    "brand_names": [
+      "iressa",
+      "gefitinib mylan"
+    ],
+    "chembl_id": "CHEMBL939",
+    "found": true
+  },
+  "tagrisso": {
+    "query": "Tagrisso",
+    "generic_name": "osimertinib mesylate",
+    "synonyms": [
+      "mereletinib mesylate",
+      "tagrisso",
+      "azd9291 mesylate",
+      "mereletinib mesilate",
+      "osimertinib mesilate",
+      "azd-9291 mesylate",
+      "osimertinib mesylate"
+    ],
+    "brand_names": [
+      "tagrisso"
+    ],
+    "chembl_id": "CHEMBL3545063",
+    "found": true
+  },
+  "herceptin": {
+    "query": "Herceptin",
+    "generic_name": "trastuzumab",
+    "synonyms": [
+      "rhumab her2",
+      "rhumabher2",
+      "trastuzumab dttb",
+      "eg-12014",
+      "trastuzumab",
+      "r-597",
+      "trastuzumab biosimilar (ct-p6)",
+      "eg12014 trastuzumab biosimilar",
+      "trastuzumab-oysk",
+      "trastuzumab qyyp",
+      "dmb-3111",
+      "ro-0452317",
+      "trastuzumab-pkrb",
+      "abp 980",
+      "trastuzumab biosimilar (amgen)",
+      "trastuzumab component of phesgo",
+      "sb-3 (trastuzumab biosimilar)",
+      "trastuzumab biosimilar (abp-980)",
+      "trastuzumab-pfizer",
+      "dmb-3111 (trastuzumab biosimilar)",
+      "ro0452317",
+      "trastuzumab pkrb",
+      "ontruzant",
+      "eg12014",
+      "trastuzumab-strf",
+      "syd977",
+      "herceptin",
+      "syd-977",
+      "trastuzumab component of herceptin hylecta",
+      "bmab-200",
+      "4d5v8",
+      "herzuma",
+      "trastuzumab-dkst",
+      "trastuzumab-zzxf",
+      "trazimera",
+      "hlx 02",
+      "canhera",
+      "trastuzumab-anns",
+      "eg-12014 (trastuzumab biosimilar)",
+      "abp980",
+      "abp-980 (trastuzumab biosimilar)",
+      "hlx-02",
+      "zercepac",
+      "trastuzumab biosimilar (pfizer)",
+      "hlx-02 trastuzumab biosimilar",
+      "abp-980",
+      "trastuzumab beta",
+      "trastuzumab anns",
+      "trastuzumab-dttb",
+      "trastuzumab-qyyp",
+      "ogivri",
+      "hercessi",
+      "trastuzumab (herceptin)",
+      "trastuzumab dkst",
+      "hlx02",
+      "kanjinti",
+      "pf-05280014",
+      "herwenda",
+      "kadcyla",
+      "trastuzumab biosimilar (sb-3)"
+    ],
+    "brand_names": [
+      "ogivri",
+      "herceptin",
+      "zercepac",
+      "kanjinti",
+      "trastuzumab component of herceptin hylecta",
+      "herzuma",
+      "trastuzumab component of phesgo",
+      "herwenda",
+      "kadcyla",
+      "ontruzant",
+      "trazimera"
+    ],
+    "chembl_id": "CHEMBL1201585",
+    "found": true
+  },
+  "gleevec": {
+    "query": "Gleevec",
+    "generic_name": "imatinib mesylate",
+    "synonyms": [
+      "imatinib (as mesilate)",
+      "nsc-716051",
+      "imatinib teva",
+      "sti571",
+      "imatinib methanesulfonate",
+      "sti 571",
+      "imatinib koanaa",
+      "sti-571",
+      "imatinib actavis",
+      "imatinib mesilate",
+      "imatinib medac",
+      "imatinib methane sulfonate",
+      "imatinib mesylate",
+      "gleevec",
+      "qti-571",
+      "imatinib teva b.v.",
+      "imatinib accord",
+      "glivec",
+      "qti571"
+    ],
+    "brand_names": [
+      "imatinib medac",
+      "imatinib mesylate",
+      "imatinib teva",
+      "gleevec",
+      "imatinib teva b.v.",
+      "imatinib accord",
+      "glivec",
+      "imatinib actavis",
+      "imatinib koanaa"
+    ],
+    "chembl_id": "CHEMBL1642",
+    "found": true
+  },
+  "erlotinib": {
+    "query": "erlotinib",
+    "generic_name": "erlotinib hydrochloride",
+    "synonyms": [
+      "erlotinib hydrochloride",
+      "cp-358774-01",
+      "osi-774",
+      "tarceva",
+      "erlotinib hcl",
+      "cp-358,774-01",
+      "cp-358"
+    ],
+    "brand_names": [
+      "erlotinib hydrochloride",
+      "tarceva"
+    ],
+    "chembl_id": "CHEMBL1079742",
+    "found": true
+  },
+  "gefitinib": {
+    "query": "gefitinib",
+    "generic_name": "gefitinib",
+    "synonyms": [
+      "zd-1839",
+      "zd1839",
+      "nsc-759856",
+      "gefitinib mylan",
+      "iressa",
+      "gefitinib"
+    ],
+    "brand_names": [
+      "iressa",
+      "gefitinib mylan"
+    ],
+    "chembl_id": "CHEMBL939",
+    "found": true
+  }
+}
