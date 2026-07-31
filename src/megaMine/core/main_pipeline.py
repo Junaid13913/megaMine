@@ -132,8 +132,8 @@ def run_pipeline(
             extractor_args += ["--drug-whitelist", drug_whitelist]
         if year_binned:
             extractor_args += ["--year-binned"]
-        if cancer_type:
-            extractor_args += ["--all-cancers"]
+        # Note: --all-cancers removed to avoid query modification
+        # Cancer filtering handled by normalizers.py downstream
 
         # Run extractor
         from megaMine.core.extractor import main as extractor_main
@@ -248,7 +248,8 @@ def run_pipeline(
                 contradiction_df = contradiction_df,
                 dry_run          = dry_run_trials,
             )
-            failed = (trials_df["has_failed_trial"] == "yes").sum()
+            flag_col = "has_terminated_trial" if "has_terminated_trial" in trials_df.columns else "has_failed_trial"
+            failed = (trials_df[flag_col] == "yes").sum() if flag_col in trials_df.columns else 0
             print(f"   ✅ Linked {len(trials_df)} drug-cancer pairs")
             print(f"   ⚠️  {failed} pairs have negative clinical "
                   f"development signals")
