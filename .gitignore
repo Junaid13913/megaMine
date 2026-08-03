@@ -25,3 +25,6 @@ build/
 .ipynb_checkpoints/
 A001-0002.maf
 *.maf
+*.maf
+*.vcf
+patient_*.xlsx
