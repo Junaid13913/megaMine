@@ -23,3 +23,5 @@ build/
 
 # Notebooks output
 .ipynb_checkpoints/
+A001-0002.maf
+*.maf
