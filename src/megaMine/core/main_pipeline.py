@@ -160,7 +160,25 @@ def run_pipeline(
 
     if len(df) == 0:
         print("\n   No rows extracted — pipeline complete with no data")
-        return outputs
+        # ── Module timing ─────────────────────────────────────────
+    import json as _json
+    elapsed_total = round(time.time() - start_time, 1)
+    timing = {
+        "pipeline_total_sec": elapsed_total,
+        "n_pmids": int(len(df["pmid"].unique())) if "pmid" in df.columns else 0,
+        "n_rows": int(len(df)),
+        "note": "Per-module timing requires --time-modules flag in future version"
+    }
+    timing_path = out_prefix + "_timing.json"
+    try:
+        with open(timing_path, "w") as _tf:
+            _json.dump(timing, _tf, indent=2)
+        print(f"\n⏱️  Total runtime: {elapsed_total}s")
+        print(f"   Timing saved: {timing_path}")
+    except Exception as _te:
+        print(f"   Timing save skipped: {_te}")
+
+    return outputs
 
     # ── Step 2: LLM Verification ──────────────────────────────
     if llm_verify:
