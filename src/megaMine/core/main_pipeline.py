@@ -160,7 +160,26 @@ def run_pipeline(
 
     if len(df) == 0:
         print("\n   No rows extracted — pipeline complete with no data")
-        # ── Module timing ─────────────────────────────────────────
+        # ── Step 8: Generate HTML Report ─────────────────────────
+    print(f"\n🌐 STEP 8: Generating HTML Report...")
+    html_path = f"{out_prefix}_HTML_REPORT.html"
+    try:
+        from megaMine.report.html_report import build_html_report
+        nodes_path = outputs.get("nodes_csv","")
+        edges_path = outputs.get("edges_csv","")
+        build_html_report(
+            report_path = report_path,
+            nodes_path  = nodes_path if nodes_path else None,
+            edges_path  = edges_path if edges_path else None,
+            out_path    = html_path,
+            title       = f"megaMine v2.0 — {query[:60]}",
+        )
+        outputs["html_report"] = html_path
+        print(f"   ✅ HTML report saved: {html_path}")
+    except Exception as e:
+        print(f"   ⚠️  HTML report error: {e}")
+
+    # ── Module timing ─────────────────────────────────────────
     import json as _json
     elapsed_total = round(time.time() - start_time, 1)
     timing = {
