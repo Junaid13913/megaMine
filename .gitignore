@@ -29,3 +29,7 @@ A001-0002.maf
 *.vcf
 patient_*.xlsx
 figures/
+logs/
+figures/
+data/processed/
+*.log
